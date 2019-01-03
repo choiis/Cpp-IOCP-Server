@@ -1,95 +1,180 @@
 //============================================================================
-// Name        : Server.cpp
+// Name        : IocpServer.cpp
 // Author      : 
 // Version     :
 // Copyright   : Your copyright notice
 // Description : Hello World in C++, Ansi-style
 //============================================================================
-
+// https://dramadramingdays.tistory.com/119
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <winsock2.h>
 #include <process.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <map>
 
-#define BUF_SIZE 200
 using namespace std;
 
-map<string, SOCKET> userMap;
+#define BUF_SIZE 100
+#define START 1
+#define READ 2
+#define WRITE 3
 
-HANDLE hMutex;
+int const NAME_SIZE = 10;
 
-void ErrorHandling(char* message) {
-	fputs(message, stderr);
-	fputc('\n', stderr);
-	exit(1);
-}
+typedef struct { // socket info
+	SOCKET hClntSock;
+	SOCKADDR_IN clntAdr;
+} PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
 
-void SendMsgAll(char* msg, int len) {
-	map<string, SOCKET>::iterator iter;
+typedef struct { // buffer info
+	OVERLAPPED overlapped;
+	WSABUF wsaBuf;
+	char buffer[BUF_SIZE];
+	int serverMode;
+	int clientMode;
+} PER_IO_DATA, *LPPER_IO_DATA;
 
-	for (iter = userMap.begin(); iter != userMap.end(); ++iter) {
-		send((*iter).second, msg, len, 0);
+typedef struct {
+	char id[NAME_SIZE];
+	unsigned int level;
+} USER_INFO, *PUSER_INFO;
+
+map<string, LPPER_HANDLE_DATA> userMap;
+
+HANDLE mutex;
+
+void SendToAllMsg(LPPER_IO_DATA ioInfo, char *msg, DWORD bytesTrans) {
+	WaitForSingleObject(mutex, INFINITE);
+	map<string, LPPER_HANDLE_DATA>::iterator iter;
+	for (iter = userMap.begin(); iter != userMap.end(); iter++) {
+		ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
+		memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
+		ioInfo->wsaBuf.buf = msg;
+		ioInfo->wsaBuf.len = bytesTrans;
+		ioInfo->serverMode = WRITE;
+		WSASend((*iter->second).hClntSock, &(ioInfo->wsaBuf), 1, NULL, 0,
+				&(ioInfo->overlapped), NULL);
 	}
+	ReleaseMutex(mutex);
 }
 
-void SendMsg(char* msg, int len) {
-
-	WaitForSingleObject(hMutex, INFINITE);
-	SendMsgAll(msg, len);
-	ReleaseMutex(hMutex);
-}
-
-unsigned WINAPI HandleClnt(void* arg) {
-	SOCKET hClntSock = *((SOCKET*) arg);
-	int strLen = 0;
+unsigned WINAPI HandleThread(LPVOID pCompPort) {
+	HANDLE hComPort = (HANDLE) pCompPort;
+	SOCKET sock;
+	DWORD bytesTrans;
+	LPPER_HANDLE_DATA handleInfo;
+	LPPER_IO_DATA ioInfo;
+	DWORD flags = 0;
 	char msg[BUF_SIZE];
 
-	while ((strLen = recv(hClntSock, msg, sizeof(msg), 0)) != 0) {
-		cout << msg << endl;
-		if (strcmp(msg, "chatting over") == 0) {
-			break;
+	while (true) {
+		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &handleInfo,
+				(LPOVERLAPPED*) &ioInfo, INFINITE);
+		sock = handleInfo->hClntSock;
+
+		cout << "complete OK" << endl;
+
+		if (START == ioInfo->serverMode) {
+			cout << "START" << endl;
+
+			WaitForSingleObject(mutex, INFINITE);
+			memset(msg, 0, BUF_SIZE);
+			strcpy(msg, ioInfo->buffer);
+
+			cout << "START message : " << msg << endl;
+			cout << "clientMode : " << ioInfo->clientMode << endl;
+
+			userMap.insert(pair<string, LPPER_HANDLE_DATA>(msg, handleInfo));
+			cout << "현재 접속 인원 수 : " << userMap.size() << endl;
+
+			ReleaseMutex(mutex);
+
+			free(ioInfo);
+			strcat(msg, " 님이 입장하셨습니다\n");
+			int len = strlen(msg);
+			SendToAllMsg(ioInfo, msg, len);
+
+			ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
+			memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
+			ioInfo->wsaBuf.len = BUF_SIZE;
+			ioInfo->wsaBuf.buf = ioInfo->buffer;
+			ioInfo->serverMode = READ;
+
+			WSARecv(sock, &(ioInfo->wsaBuf), 1, NULL, &flags,
+					&(ioInfo->overlapped), NULL);
+
+		} else if (READ == ioInfo->serverMode) {
+			puts("message received");
+
+			if (bytesTrans == 0 || strcmp(ioInfo->buffer, "out") == 0) {
+				WaitForSingleObject(mutex, INFINITE);
+				map<string, LPPER_HANDLE_DATA>::iterator iter;
+				for (iter = userMap.begin(); iter != userMap.end(); iter++) {
+					if (sock == (*iter).second->hClntSock) {
+						userMap.erase((*iter).first);
+						break;
+					}
+				}
+				cout << "현재 접속 인원 수 : " << userMap.size() << endl;
+				ReleaseMutex(mutex);
+				closesocket(sock);
+				free(handleInfo);
+				free(ioInfo);
+				continue;
+			}
+
+			memset(msg, 0, BUF_SIZE);
+			strcpy(msg, ioInfo->buffer);
+			free(ioInfo);
+			cout << "received message : " << msg << endl;
+			SendToAllMsg(ioInfo, msg, bytesTrans);
+			ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
+			memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
+			ioInfo->wsaBuf.len = BUF_SIZE;
+			ioInfo->wsaBuf.buf = ioInfo->buffer;
+			ioInfo->serverMode = READ;
+
+			WSARecv(sock, &(ioInfo->wsaBuf), 1, NULL, &flags,
+					&(ioInfo->overlapped), NULL);
+		} else {
+			free(ioInfo);
 		}
-		SendMsg(msg, strLen);
 	}
-
-	WaitForSingleObject(hMutex, INFINITE);
-
-	map<string, SOCKET>::iterator iter;
-
-	for (iter = userMap.begin(); iter != userMap.end(); ++iter) {
-		if ((*iter).second == hClntSock) {
-			cout << (*iter).first << "님 나감" << endl;
-			userMap.erase((*iter).first);
-			break;
-		}
-	}
-	ReleaseMutex(hMutex);
-	closesocket(hClntSock);
 	return 0;
 }
 
 int main(int argc, char* argv[]) {
 
 	WSADATA wsaData;
-	SOCKET hServSock, hClntSock;
-	SOCKADDR_IN servAdr, clntAdr;
+	HANDLE hComPort;
+	SYSTEM_INFO sysInfo;
+	LPPER_IO_DATA ioInfo;
+	LPPER_HANDLE_DATA handleInfo;
 
-	int clntAdrSize;
-
+	SOCKET hServSock;
+	SOCKADDR_IN servAdr;
+	int recvBytes, i, flags = 0;
 	if (argc != 2) {
 		cout << "Usage : " << argv[0] << endl;
 		exit(1);
 	}
 
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-		ErrorHandling("WSAStartup() error!");
+		printf("WSAStartup() error!");
+		exit(1);
 	}
 
-	hMutex = CreateMutex(NULL, FALSE, NULL);
-	hServSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+	hComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
+	GetSystemInfo(&sysInfo);
+
+	int process = sysInfo.dwNumberOfProcessors;
+	for (i = 0; i < process; i++) {
+		_beginthreadex(NULL, 0, HandleThread, (LPVOID) hComPort, 0, NULL);
+	}
+	hServSock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
+	WSA_FLAG_OVERLAPPED);
 
 	memset(&servAdr, 0, sizeof(servAdr));
 	servAdr.sin_family = PF_INET;
@@ -97,39 +182,45 @@ int main(int argc, char* argv[]) {
 	servAdr.sin_port = htons(atoi(argv[1]));
 
 	if (bind(hServSock, (SOCKADDR*) &servAdr, sizeof(servAdr)) == SOCKET_ERROR) {
-		ErrorHandling("bind() error!");
+		printf("bind() error!");
+		exit(1);
 	}
 
 	if (listen(hServSock, 5) == SOCKET_ERROR) {
-		ErrorHandling("listen() error!");
+		printf("listen() error!");
+		exit(1);
 	}
 
+	mutex = CreateMutex(NULL, FALSE, NULL);
 	cout << "Server ready listen" << endl;
+	cout << "port number" << argv[1] << endl;
 
 	while (true) {
-		clntAdrSize = sizeof(clntAdr);
-		hClntSock = accept(hServSock, (SOCKADDR*) &clntAdr, &clntAdrSize);
+		SOCKET hClientSock;
+		SOCKADDR_IN clntAdr;
 
-		WaitForSingleObject(hMutex, INFINITE);
-		char intro[BUF_SIZE + 30];
-		recv(hClntSock, intro, sizeof(intro), 0);
-		userMap.insert(pair<string, SOCKET>(intro, hClntSock));
+		int addrLen = sizeof(clntAdr);
+		hClientSock = accept(hServSock, (SOCKADDR*) &clntAdr, &addrLen);
+		handleInfo = (LPPER_HANDLE_DATA) malloc(sizeof(PER_IO_DATA));
+		handleInfo->hClntSock = hClientSock;
+		memcpy(&(handleInfo->clntAdr), &clntAdr, addrLen);
 
-		cout << "userName : " << intro << endl;
 		cout << "Connected client IP " << inet_ntoa(clntAdr.sin_addr) << endl;
-		cout << "현재 채팅 인원 : " << userMap.size() << endl;
 
-		strcat(intro, " 님이 입장했습니다");
-		cout << intro << endl;
-		SendMsgAll(intro, strlen(intro));
-		ReleaseMutex(hMutex);
+		CreateIoCompletionPort((HANDLE) hClientSock, hComPort,
+				(DWORD) handleInfo, 0);
+		ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
+		memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
+		ioInfo->wsaBuf.len = BUF_SIZE;
+		ioInfo->wsaBuf.buf = ioInfo->buffer;
+		ioInfo->serverMode = START;
+		ioInfo->clientMode = 1;
 
-		HANDLE hThread = (HANDLE) _beginthreadex(NULL, 0, HandleClnt,
-				(void*) &hClntSock, 0, NULL);
+		WSARecv(handleInfo->hClntSock, &(ioInfo->wsaBuf), 1,
+				(LPDWORD) &recvBytes, (LPDWORD) &flags, &(ioInfo->overlapped),
+				NULL);
 	}
 
-	closesocket(hServSock);
-	WSACleanup();
-
-	return EXIT_SUCCESS;
+	CloseHandle(mutex);
+	return 0;
 }
