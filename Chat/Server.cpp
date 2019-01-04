@@ -45,15 +45,17 @@ map<string, LPPER_HANDLE_DATA> userMap;
 
 HANDLE mutex;
 
-void SendToAllMsg(LPPER_IO_DATA ioInfo, char *msg, DWORD bytesTrans) {
+void SendToAllMsg(LPPER_IO_DATA ioInfo, char *msg) {
 	WaitForSingleObject(mutex, INFINITE);
+	printf("SendToAllMsg %s\n", msg);
+	ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
+	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
+	strcpy(ioInfo->buffer, msg);
+	ioInfo->wsaBuf.buf = ioInfo->buffer;
+	ioInfo->wsaBuf.len = BUF_SIZE;
+	ioInfo->serverMode = WRITE;
 	map<string, LPPER_HANDLE_DATA>::iterator iter;
 	for (iter = userMap.begin(); iter != userMap.end(); iter++) {
-		ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
-		memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-		ioInfo->wsaBuf.buf = msg;
-		ioInfo->wsaBuf.len = bytesTrans;
-		ioInfo->serverMode = WRITE;
 		WSASend((*iter->second).hClntSock, &(ioInfo->wsaBuf), 1, NULL, 0,
 				&(ioInfo->overlapped), NULL);
 	}
@@ -93,8 +95,7 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 			free(ioInfo);
 			strcat(msg, " ´ÔÀÌ ÀÔÀåÇÏ¼Ì½À´Ï´Ù\n");
-			int len = strlen(msg);
-			SendToAllMsg(ioInfo, msg, len);
+			SendToAllMsg(ioInfo, msg);
 
 			ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
 			memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
@@ -129,7 +130,7 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			strcpy(msg, ioInfo->buffer);
 			free(ioInfo);
 			cout << "received message : " << msg << endl;
-			SendToAllMsg(ioInfo, msg, bytesTrans);
+			SendToAllMsg(ioInfo, msg);
 			ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
 			memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 			ioInfo->wsaBuf.len = BUF_SIZE;
