@@ -26,12 +26,20 @@ int const NAME_SIZE = 10;
 typedef struct { // socket info
 	SOCKET hClntSock;
 	SOCKADDR_IN clntAdr;
+	string roomName;
+	int status;
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
+
+typedef struct {
+	int status;
+	char name[BUF_SIZE];
+	char message[BUF_SIZE];
+} PACKET_DATA, *P_PACKET_DATA;
 
 typedef struct { // buffer info
 	OVERLAPPED overlapped;
 	WSABUF wsaBuf;
-	char buffer[BUF_SIZE];
+	char buffer[sizeof(PACKET_DATA)];
 	int serverMode;
 	int clientMode;
 } PER_IO_DATA, *LPPER_IO_DATA;
@@ -46,14 +54,15 @@ map<string, LPPER_HANDLE_DATA> userMap;
 HANDLE mutex;
 
 void SendToAllMsg(LPPER_IO_DATA ioInfo, char *msg) {
-	WaitForSingleObject(mutex, INFINITE);
+
 	printf("SendToAllMsg %s\n", msg);
 	ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-	strcpy(ioInfo->buffer, msg);
-	ioInfo->wsaBuf.buf = ioInfo->buffer;
+
+	ioInfo->wsaBuf.buf = msg;
 	ioInfo->wsaBuf.len = BUF_SIZE;
 	ioInfo->serverMode = WRITE;
+	WaitForSingleObject(mutex, INFINITE);
 	map<string, LPPER_HANDLE_DATA>::iterator iter;
 	for (iter = userMap.begin(); iter != userMap.end(); iter++) {
 		WSASend((*iter->second).hClntSock, &(ioInfo->wsaBuf), 1, NULL, 0,
@@ -70,23 +79,25 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 	LPPER_IO_DATA ioInfo;
 	DWORD flags = 0;
 	char msg[BUF_SIZE];
+	char mode[BUF_SIZE];
+	P_PACKET_DATA packet;
 
 	while (true) {
 		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &handleInfo,
 				(LPOVERLAPPED*) &ioInfo, INFINITE);
 		sock = handleInfo->hClntSock;
 
-		cout << "complete OK" << endl;
-
 		if (START == ioInfo->serverMode) {
 			cout << "START" << endl;
+			packet = (P_PACKET_DATA) malloc(sizeof(PACKET_DATA));
+			memcpy(packet, ioInfo->buffer, sizeof(PACKET_DATA));
+			strcpy(msg, packet->name);
+			strcpy(mode, packet->message);
 
 			WaitForSingleObject(mutex, INFINITE);
-			memset(msg, 0, BUF_SIZE);
-			strcpy(msg, ioInfo->buffer);
 
 			cout << "START message : " << msg << endl;
-			cout << "clientMode : " << ioInfo->clientMode << endl;
+			cout << "clientMode : " << mode << endl;
 
 			userMap.insert(pair<string, LPPER_HANDLE_DATA>(msg, handleInfo));
 			cout << "현재 접속 인원 수 : " << userMap.size() << endl;
@@ -140,7 +151,8 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			WSARecv(sock, &(ioInfo->wsaBuf), 1, NULL, &flags,
 					&(ioInfo->overlapped), NULL);
 		} else {
-			free(ioInfo);
+			puts("message send");
+			//free(ioInfo);
 		}
 	}
 	return 0;
@@ -212,10 +224,10 @@ int main(int argc, char* argv[]) {
 				(DWORD) handleInfo, 0);
 		ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
 		memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-		ioInfo->wsaBuf.len = BUF_SIZE;
+
+		ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
 		ioInfo->wsaBuf.buf = ioInfo->buffer;
 		ioInfo->serverMode = START;
-		ioInfo->clientMode = 1;
 
 		WSARecv(handleInfo->hClntSock, &(ioInfo->wsaBuf), 1,
 				(LPDWORD) &recvBytes, (LPDWORD) &flags, &(ioInfo->overlapped),

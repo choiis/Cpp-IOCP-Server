@@ -26,20 +26,28 @@ typedef struct { // socket info
 	SOCKADDR_IN clntAdr;
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
 
+typedef struct {
+	int status;
+	char name[BUF_SIZE];
+	char message[BUF_SIZE];
+} PACKET_DATA, *P_PACKET_DATA;
+
 typedef struct { // buffer info
 	OVERLAPPED overlapped;
 	WSABUF wsaBuf;
-	char buffer[BUF_SIZE];
+	char buffer[sizeof(PACKET_DATA)];
 	int serverMode;
 	int clientMode;
 } PER_IO_DATA, *LPPER_IO_DATA;
 
 unsigned WINAPI SendMsg(void *arg) {
 	SOCKET hSock = *((SOCKET*) arg);
-	char nameMsg[NAME_SIZE + BUF_SIZE];
+	char nameMsg[BUF_SIZE];
 
 	while (1) {
-		fgets(msg, BUF_SIZE, stdin);
+		cin >> msg;
+		//fgets(msg, BUF_SIZE, stdin);
+
 		if (!strcmp(msg, "q\n") || !strcmp(msg, "Q\n")
 				|| !strcmp(msg, "out\n")) {
 			// 채팅 끝남 메시지
@@ -73,6 +81,7 @@ unsigned WINAPI RecvMsg(LPVOID hComPort) {
 	while (1) {
 		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &handleInfo,
 				(LPOVERLAPPED*) &ioInfo, INFINITE);
+		cout << "recv Ok" << endl;
 		strcpy(nameMsg, ioInfo->buffer);
 		fputs(nameMsg, stdout);
 
@@ -143,18 +152,24 @@ int main(int argc, char* argv[0]) {
 	WSAEVENT event = WSACreateEvent();
 	handleInfo = (LPPER_HANDLE_DATA) malloc(sizeof(PER_IO_DATA));
 	handleInfo->hClntSock = hSocket;
-
-	CreateIoCompletionPort((HANDLE) hSocket, hComPort, (DWORD) handleInfo, 0);
-
 	int addrLen = sizeof(servAddr);
 	memcpy(&(handleInfo->clntAdr), &servAddr, addrLen);
 	memset(&overlapped, 0, sizeof(OVERLAPPED));
-	overlapped.hEvent = event;
 
-	dataBuf.wsaBuf.buf = name;
-	dataBuf.wsaBuf.len = BUF_SIZE;
+	CreateIoCompletionPort((HANDLE) hSocket, hComPort, (DWORD) handleInfo, 0);
+
+	overlapped.hEvent = event;
+	P_PACKET_DATA packet;
+	packet = (P_PACKET_DATA) malloc(sizeof(PACKET_DATA));
+	strcpy(packet->name, name);
+	strcpy(packet->message, "최초 접속 모드");
+
+	dataBuf.wsaBuf.buf = (char*) packet;
+	dataBuf.wsaBuf.len = sizeof(PACKET_DATA);
 
 	WSASend(hSocket, &(dataBuf.wsaBuf), 1, NULL, 0, &overlapped, NULL);
+
+	free(packet);
 	recvThread = (HANDLE) _beginthreadex(NULL, 0, RecvMsg, (LPVOID) hComPort, 0,
 	NULL);
 	sendThread = (HANDLE) _beginthreadex(NULL, 0, SendMsg, (void*) &hSocket, 0,
