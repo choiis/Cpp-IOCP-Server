@@ -16,6 +16,8 @@
 #define BUF_SIZE 100
 #define NAME_SIZE 20
 
+#define STATUS_CHAT 2
+
 char name[NAME_SIZE] = "";
 char msg[BUF_SIZE];
 
@@ -63,9 +65,14 @@ unsigned WINAPI SendMsg(void *arg) {
 		memset(&overlapped, 0, sizeof(OVERLAPPED));
 		overlapped.hEvent = event;
 
-		dataBuf.wsaBuf.buf = nameMsg;
-		dataBuf.wsaBuf.len = BUF_SIZE;
-		dataBuf.clientMode = 5;
+		P_PACKET_DATA packet;
+		packet = (P_PACKET_DATA) malloc(sizeof(PACKET_DATA));
+		strcpy(packet->name, nameMsg);
+		strcpy(packet->message, "채팅중 접속 모드");
+
+		dataBuf.wsaBuf.buf = (char*) packet;
+		dataBuf.wsaBuf.len = sizeof(PACKET_DATA);
+
 		WSASend(hSock, &(dataBuf.wsaBuf), 1, NULL, 0, &overlapped, NULL);
 	}
 	return 0;
@@ -81,9 +88,15 @@ unsigned WINAPI RecvMsg(LPVOID hComPort) {
 	while (1) {
 		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &handleInfo,
 				(LPOVERLAPPED*) &ioInfo, INFINITE);
-		cout << "recv Ok" << endl;
-		strcpy(nameMsg, ioInfo->buffer);
-		fputs(nameMsg, stdout);
+
+		P_PACKET_DATA packet = (P_PACKET_DATA) malloc(sizeof(PACKET_DATA));
+		memcpy(packet, ioInfo->buffer, sizeof(PACKET_DATA));
+
+		strcpy(nameMsg, packet->message);
+
+		if (packet->status == STATUS_CHAT) {
+			cout << nameMsg << endl;
+		}
 
 		sock = handleInfo->hClntSock;
 		if (bytesTrans == 0) {
@@ -92,7 +105,7 @@ unsigned WINAPI RecvMsg(LPVOID hComPort) {
 
 		int recvBytes, flags = 0;
 		ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
-		ioInfo->wsaBuf.len = BUF_SIZE;
+		ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
 		ioInfo->wsaBuf.buf = ioInfo->buffer;
 		WSARecv(sock, &(ioInfo->wsaBuf), 1, (LPDWORD) &recvBytes,
 				(LPDWORD) &flags, &(ioInfo->overlapped),

@@ -13,6 +13,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <map>
+#include <vector>
 
 using namespace std;
 
@@ -21,6 +22,7 @@ using namespace std;
 #define READ 2
 #define WRITE 3
 
+#define STATUS_CHAT 2
 int const NAME_SIZE = 10;
 
 typedef struct { // socket info
@@ -41,7 +43,6 @@ typedef struct { // buffer info
 	WSABUF wsaBuf;
 	char buffer[sizeof(PACKET_DATA)];
 	int serverMode;
-	int clientMode;
 } PER_IO_DATA, *LPPER_IO_DATA;
 
 typedef struct {
@@ -50,25 +51,33 @@ typedef struct {
 } USER_INFO, *PUSER_INFO;
 
 map<string, LPPER_HANDLE_DATA> userMap;
+map<string, vector<string> > roomMap;
 
 HANDLE mutex;
 
-void SendToAllMsg(LPPER_IO_DATA ioInfo, char *msg) {
+void SendToAllMsg(LPPER_IO_DATA ioInfo, char *msg, SOCKET mySock) {
 
 	printf("SendToAllMsg %s\n", msg);
 	ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-
-	ioInfo->wsaBuf.buf = msg;
-	ioInfo->wsaBuf.len = BUF_SIZE;
+	P_PACKET_DATA packet;
+	packet = (P_PACKET_DATA) malloc(sizeof(PACKET_DATA));
+	strcpy(packet->message, msg);
+	packet->status = STATUS_CHAT;
+	ioInfo->wsaBuf.buf = (char*) packet;
+	ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
 	ioInfo->serverMode = WRITE;
-	WaitForSingleObject(mutex, INFINITE);
+	// WaitForSingleObject(mutex, INFINITE);
 	map<string, LPPER_HANDLE_DATA>::iterator iter;
 	for (iter = userMap.begin(); iter != userMap.end(); iter++) {
+		//if ((*iter->second).hClntSock == mySock) {
+		//	continue;
+		//} else {
 		WSASend((*iter->second).hClntSock, &(ioInfo->wsaBuf), 1, NULL, 0,
 				&(ioInfo->overlapped), NULL);
+		//}
 	}
-	ReleaseMutex(mutex);
+	// ReleaseMutex(mutex);
 }
 
 unsigned WINAPI HandleThread(LPVOID pCompPort) {
@@ -94,7 +103,7 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			strcpy(msg, packet->name);
 			strcpy(mode, packet->message);
 
-			WaitForSingleObject(mutex, INFINITE);
+			// WaitForSingleObject(mutex, INFINITE);
 
 			cout << "START message : " << msg << endl;
 			cout << "clientMode : " << mode << endl;
@@ -102,15 +111,15 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			userMap.insert(pair<string, LPPER_HANDLE_DATA>(msg, handleInfo));
 			cout << "현재 접속 인원 수 : " << userMap.size() << endl;
 
-			ReleaseMutex(mutex);
+			// ReleaseMutex(mutex);
 
 			free(ioInfo);
 			strcat(msg, " 님이 입장하셨습니다\n");
-			SendToAllMsg(ioInfo, msg);
+			SendToAllMsg(ioInfo, msg, sock);
 
 			ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
 			memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-			ioInfo->wsaBuf.len = BUF_SIZE;
+			ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
 			ioInfo->wsaBuf.buf = ioInfo->buffer;
 			ioInfo->serverMode = READ;
 
@@ -121,7 +130,7 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			puts("message received");
 
 			if (bytesTrans == 0 || strcmp(ioInfo->buffer, "out") == 0) {
-				WaitForSingleObject(mutex, INFINITE);
+				// WaitForSingleObject(mutex, INFINITE);
 				map<string, LPPER_HANDLE_DATA>::iterator iter;
 				for (iter = userMap.begin(); iter != userMap.end(); iter++) {
 					if (sock == (*iter).second->hClntSock) {
@@ -130,21 +139,28 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 					}
 				}
 				cout << "현재 접속 인원 수 : " << userMap.size() << endl;
-				ReleaseMutex(mutex);
+				// ReleaseMutex(mutex);
 				closesocket(sock);
 				free(handleInfo);
 				free(ioInfo);
 				continue;
 			}
 
-			memset(msg, 0, BUF_SIZE);
-			strcpy(msg, ioInfo->buffer);
-			free(ioInfo);
+			packet = (P_PACKET_DATA) malloc(sizeof(PACKET_DATA));
+			memcpy(packet, ioInfo->buffer, sizeof(PACKET_DATA));
+			strcpy(msg, packet->name);
+			strcpy(mode, packet->message);
+
+			// WaitForSingleObject(mutex, INFINITE);
+
 			cout << "received message : " << msg << endl;
-			SendToAllMsg(ioInfo, msg);
+			cout << "clientMode : " << mode << endl;
+			free(ioInfo);
+
+			SendToAllMsg(ioInfo, msg, sock);
 			ioInfo = (LPPER_IO_DATA) malloc(sizeof(PER_IO_DATA));
 			memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-			ioInfo->wsaBuf.len = BUF_SIZE;
+			ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
 			ioInfo->wsaBuf.buf = ioInfo->buffer;
 			ioInfo->serverMode = READ;
 
@@ -211,9 +227,10 @@ int main(int argc, char* argv[]) {
 	while (true) {
 		SOCKET hClientSock;
 		SOCKADDR_IN clntAdr;
-
 		int addrLen = sizeof(clntAdr);
+		cout << "accept wait" << endl;
 		hClientSock = accept(hServSock, (SOCKADDR*) &clntAdr, &addrLen);
+
 		handleInfo = (LPPER_HANDLE_DATA) malloc(sizeof(PER_IO_DATA));
 		handleInfo->hClntSock = hClientSock;
 		memcpy(&(handleInfo->clntAdr), &clntAdr, addrLen);
