@@ -46,6 +46,7 @@ typedef struct {
 } PACKET_DATA, *P_PACKET_DATA;
 
 // 비동기 통신에 필요한 구조체
+
 typedef struct { // buffer info
 	OVERLAPPED overlapped;
 	WSABUF wsaBuf;

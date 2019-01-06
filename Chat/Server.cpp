@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <process.h>
 #include <winsock2.h>
-#include <ws2tcpip.h>
 #include <map>
 #include <list>
 
@@ -85,7 +84,7 @@ void SendToMeMsg(LPPER_IO_DATA ioInfo, char *msg, SOCKET mySock, int status) {
 	WSASend(mySock, &(ioInfo->wsaBuf), 1, NULL, 0, &(ioInfo->overlapped), NULL);
 
 	delete ioInfo;
-	// delete packet;
+	delete packet;
 }
 
 // 같은 방의 사람들에게 메세지 전달
@@ -113,7 +112,7 @@ void SendToRoomMsg(LPPER_IO_DATA ioInfo, char *msg, list<SOCKET> lists,
 	ReleaseMutex(mutex);
 
 	delete ioInfo;
-	// delete packet;
+	delete packet;
 }
 
 // 전체 사람들에게 메세지 전달
@@ -144,7 +143,7 @@ void SendToAllMsg(LPPER_IO_DATA ioInfo, char *msg, SOCKET mySock, int status) {
 	}
 	ReleaseMutex(mutex);
 
-	// delete packet;
+	delete packet;
 	delete ioInfo;
 }
 
@@ -181,7 +180,7 @@ void InitUser(P_PACKET_DATA packet, LPPER_IO_DATA ioInfo, SOCKET sock) {
 	delete ioInfo;
 
 	strcpy(msg, "입장을 환영합니다!\n");
-	strcat(msg, "1.방 정보 보기, 2.방 만들기 3.방 입장하기");
+	strcat(msg, "1.방 정보 보기, 2.방 만들기 3.방 입장하기  4.유저 정보");
 	SendToMeMsg(ioInfo, msg, sock, STATUS_WAITING);
 
 	ioInfo = new PER_IO_DATA;
@@ -263,149 +262,174 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 				// delete ioInfo;
 				continue;
-			}
+			} else {
 
-			int nowStatus = (userMap.find(sock))->second->status;
-			direction = packet->direction;
+				int nowStatus = (userMap.find(sock))->second->status;
+				direction = packet->direction;
 
-			if (nowStatus == STATUS_WAITING) { // 대기실 케이스
-				if (direction == ROOM_MAKE) { // 새로운 방 만들때
-					// cout << "ROOM_MAKE" << endl;
+				if (nowStatus == STATUS_WAITING) { // 대기실 케이스
+					if (direction == ROOM_MAKE) { // 새로운 방 만들때
+						// cout << "ROOM_MAKE" << endl;
 
-					// 유효성 검증 먼저
-					if (roomMap.count(msg) != 0) { // 방이름 중복
-						strcpy(msg, "이미 있는 방 이름입니다!\n");
-						strcat(msg, "1.방 정보 보기, 2.방 만들기 3.방 입장하기");
-						SendToMeMsg(ioInfo, msg, sock, STATUS_WAITING);
-						// 중복 케이스는 방 만들 수 없음
-					} else { // 방이름 중복 아닐 때만 개설
+						// 유효성 검증 먼저
+						if (roomMap.count(msg) != 0) { // 방이름 중복
+							strcpy(msg, "이미 있는 방 이름입니다!\n");
+							strcat(msg, "1.방 정보 보기, 2.방 만들기 3.방 입장하기  4.유저 정보");
+							SendToMeMsg(ioInfo, msg, sock, STATUS_WAITING);
+							// 중복 케이스는 방 만들 수 없음
+						} else { // 방이름 중복 아닐 때만 개설
+
+							WaitForSingleObject(mutex, INFINITE);
+							// 새로운 방 정보 저장
+							list<SOCKET> chatList;
+							chatList.push_back(sock);
+							roomMap.insert(
+									pair<string, list<SOCKET> >(msg, chatList));
+
+							// User의 상태 정보 바꾼다
+							strcpy((userMap.find(sock))->second->roomName, msg);
+							(userMap.find(sock))->second->status =
+							STATUS_CHATTIG;
+
+							ReleaseMutex(mutex);
+							strcat(msg, " 방이 개설되었습니다. 나가시려면 out을 입력하세요");
+							cout << "현재 서버의 방 갯수 : " << roomMap.size() << endl;
+							SendToMeMsg(ioInfo, msg, sock, STATUS_CHATTIG);
+						}
+
+					} else if (direction == ROOM_ENTER) { // 방 입장 요청
+						// cout << "ROOM_ENTER" << endl;
+
+						// 유효성 검증 먼저
+						if (roomMap.count(msg) == 0) { // 방 못찾음
+							strcpy(msg, "없는 방 입니다!\n");
+							strcat(msg, "1.방 정보 보기, 2.방 만들기 3.방 입장하기  4.유저 정보");
+							SendToMeMsg(ioInfo, msg, sock, STATUS_WAITING);
+						} else {
+							WaitForSingleObject(mutex, INFINITE);
+
+							roomMap.find(msg)->second.push_back(sock);
+							strcpy(userMap.find(sock)->second->roomName, msg);
+							userMap.find(sock)->second->status = STATUS_CHATTIG;
+
+							ReleaseMutex(mutex);
+
+							char sendMsg[NAME_SIZE + BUF_SIZE + 4];
+							strcpy(sendMsg, name);
+							strcat(sendMsg, " 님이 입장하셨었습니다 나가시려면 out을 입력하세요");
+							SendToRoomMsg(ioInfo, sendMsg,
+									roomMap.find(msg)->second,
+									STATUS_CHATTIG);
+						}
+
+					} else if (strcmp(msg, "1") == 0) { // 방 정보 요청시
 
 						WaitForSingleObject(mutex, INFINITE);
-						// 새로운 방 정보 저장
-						list<SOCKET> chatList;
-						chatList.push_back(sock);
-						roomMap.insert(
-								pair<string, list<SOCKET> >(msg, chatList));
-
-						// User의 상태 정보 바꾼다
-						strcpy((userMap.find(sock))->second->roomName, msg);
-						(userMap.find(sock))->second->status = STATUS_CHATTIG;
-
+						map<string, list<SOCKET> >::iterator iter;
+						char str[BUF_SIZE];
+						if (roomMap.size() == 0) {
+							strcpy(str, "만들어진 방이 없습니다\n");
+						} else {
+							strcpy(str, "방 정보 리스트\n");
+							// 방정보를 문자열로 만든다
+							for (iter = roomMap.begin(); iter != roomMap.end();
+									iter++) {
+								char num[2];
+								strcat(str, (iter->first).c_str());
+								strcat(str, " : ");
+								sprintf(num, "%d", (iter->second).size());
+								strcat(str, num);
+								strcat(str, " 명 ");
+								strcat(str, "\n");
+							}
+						}
 						ReleaseMutex(mutex);
-						strcat(msg, " 방이 개설되었습니다. 나가시려면 out을 입력하세요");
-						cout << "현재 서버의 방 갯수 : " << roomMap.size() << endl;
-						SendToMeMsg(ioInfo, msg, sock, STATUS_CHATTIG);
+						SendToMeMsg(ioInfo, str, sock, STATUS_WAITING);
+					} else if (strcmp(msg, "4") == 0) { // 유저 정보 요청시
+						char str[BUF_SIZE];
+
+						map<SOCKET, LPPER_HANDLE_DATA>::iterator iter;
+						strcpy(str, "유저 정보 리스트\n");
+						// 유저 정보를 문자열로 만든다
+						WaitForSingleObject(mutex, INFINITE);
+						for (iter = userMap.begin(); iter != userMap.end();
+								iter++) {
+
+							strcat(str, (iter->second)->userName);
+							strcat(str, " : ");
+							if ((iter->second)->status == STATUS_WAITING) {
+								strcat(str, "대기실 ");
+							} else {
+								strcat(str, (iter->second)->roomName);
+							}
+							strcat(str, "\n");
+						}
+						ReleaseMutex(mutex);
+						SendToMeMsg(ioInfo, str, sock, STATUS_WAITING);
 					}
+				} else if (nowStatus == STATUS_CHATTIG) { // 채팅 중 케이스
 
-				} else if (direction == ROOM_ENTER) { // 방 입장 요청
-					// cout << "ROOM_ENTER" << endl;
-
-					// 유효성 검증 먼저
-					if (roomMap.count(msg) == 0) { // 방 못찾음
-						strcpy(msg, "없는 방 입니다!\n");
-						strcat(msg, "1.방 정보 보기, 2.방 만들기 3.방 입장하기");
-						SendToMeMsg(ioInfo, msg, sock, STATUS_WAITING);
-					} else {
-						WaitForSingleObject(mutex, INFINITE);
-
-						roomMap.find(msg)->second.push_back(sock);
-						strcpy(userMap.find(sock)->second->roomName, msg);
-						userMap.find(sock)->second->status = STATUS_CHATTIG;
-
-						ReleaseMutex(mutex);
+					if (bytesTrans == 0 || strcmp(msg, "out") == 0
+							|| strcmp(msg, "Q") == 0 || strcmp(msg, "q") == 0) { // 채팅방 나감
+							// cout << "채팅방 나가기 " << endl;
 
 						char sendMsg[NAME_SIZE + BUF_SIZE + 4];
 						strcpy(sendMsg, name);
-						strcat(sendMsg, " 님이 입장하셨었습니다 나가시려면 out을 입력하세요");
+						strcat(sendMsg, " 님이 나갔습니다!");
+
 						SendToRoomMsg(ioInfo, sendMsg,
-								roomMap.find(msg)->second,
+								roomMap.find(
+										userMap.find(sock)->second->roomName)->second,
+								STATUS_CHATTIG);
+						char roomName[NAME_SIZE];
+						// 임계영역 제거해도 될것 같음
+						WaitForSingleObject(mutex, INFINITE);
+
+						strcpy(roomName, userMap.find(sock)->second->roomName);
+						// 방이름 임시 저장
+						strcpy(userMap.find(sock)->second->roomName, "");
+						userMap.find(sock)->second->status = STATUS_WAITING;
+
+						ReleaseMutex(mutex);
+						// 임계영역 제거해도 될것 같음
+
+						strcpy(msg, "1.방 정보 보기, 2.방 만들기 3.방 입장하기  4.유저 정보");
+						SendToMeMsg(ioInfo, msg, sock, STATUS_WAITING);
+						cout << "나가는 사람 name : " << name << endl;
+						cout << "나가는 방 name : " << roomName << endl;
+
+						// 나가는 사람 정보 out
+						(roomMap.find(roomName)->second).remove(sock);
+
+						if ((roomMap.find(roomName)->second).size() == 0) { // 방인원 0명이면 방 삭제
+							roomMap.erase(roomName);
+						}
+					} else { // 채팅방에서 채팅중
+						cout << "채팅방에 있는중 " << endl;
+						char sendMsg[NAME_SIZE + BUF_SIZE + 4];
+						strcpy(sendMsg, name);
+						strcat(sendMsg, " : ");
+						strcat(sendMsg, msg);
+						SendToRoomMsg(ioInfo, sendMsg,
+								roomMap.find(
+										userMap.find(sock)->second->roomName)->second,
 								STATUS_CHATTIG);
 					}
 
-				} else if (strcmp(msg, "1") == 0) { // 방 정보 요청시
-
-					WaitForSingleObject(mutex, INFINITE);
-					map<string, list<SOCKET> >::iterator iter;
-					char str[BUF_SIZE];
-					if (roomMap.size() == 0) {
-						strcpy(str, "만들어진 방이 없습니다\n");
-					} else {
-						strcpy(str, "방 정보 리스트\n");
-						// 방정보를 문자열로 만든다
-						for (iter = roomMap.begin(); iter != roomMap.end();
-								iter++) {
-							char num[2];
-							strcat(str, (iter->first).c_str());
-							strcat(str, " : ");
-							sprintf(num, "%d", (iter->second).size());
-							strcat(str, num);
-							strcat(str, " 명 ");
-							strcat(str, "\n");
-						}
-					}
-					ReleaseMutex(mutex);
-					SendToMeMsg(ioInfo, str, sock, STATUS_WAITING);
-				}
-			} else if (nowStatus == STATUS_CHATTIG) { // 채팅 중 케이스
-
-				if (bytesTrans == 0 || strcmp(msg, "out") == 0
-						|| strcmp(msg, "Q") == 0 || strcmp(msg, "q") == 0) { // 채팅방 나감
-						// cout << "채팅방 나가기 " << endl;
-
-					char sendMsg[NAME_SIZE + BUF_SIZE + 4];
-					strcpy(sendMsg, name);
-					strcat(sendMsg, " 님이 나갔습니다!");
-
-					SendToRoomMsg(ioInfo, sendMsg,
-							roomMap.find(userMap.find(sock)->second->roomName)->second,
-							STATUS_CHATTIG);
-					char roomName[NAME_SIZE];
-					// 임계영역 제거해도 될것 같음
-					WaitForSingleObject(mutex, INFINITE);
-
-					strcpy(roomName, userMap.find(sock)->second->roomName);
-					// 방이름 임시 저장
-					strcpy(userMap.find(sock)->second->roomName, "");
-					userMap.find(sock)->second->status = STATUS_WAITING;
-
-					ReleaseMutex(mutex);
-					// 임계영역 제거해도 될것 같음
-
-					strcpy(msg, "1.방 정보 보기, 2.방 만들기 3.방 입장하기");
-					SendToMeMsg(ioInfo, msg, sock, STATUS_WAITING);
-					cout << "나가는 사람 name : " << name << endl;
-					cout << "나가는 방 name : " << roomName << endl;
-
-					// 나가는 사람 정보 out
-					(roomMap.find(roomName)->second).remove(sock);
-
-					if ((roomMap.find(roomName)->second).size() == 0) { // 방인원 0명이면 방 삭제
-						roomMap.erase(roomName);
-					}
-				} else { // 채팅방에서 채팅중
-					cout << "채팅방에 있는중 " << endl;
-					char sendMsg[NAME_SIZE + BUF_SIZE + 4];
-					strcpy(sendMsg, name);
-					strcat(sendMsg, " : ");
-					strcat(sendMsg, msg);
-					SendToRoomMsg(ioInfo, sendMsg,
-							roomMap.find(userMap.find(sock)->second->roomName)->second,
-							STATUS_CHATTIG);
 				}
 
+				delete ioInfo;
+
+				ioInfo = new PER_IO_DATA;
+				memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
+				ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
+				ioInfo->wsaBuf.buf = ioInfo->buffer;
+				ioInfo->serverMode = READ;
+
+				// 계속 Recv
+				WSARecv(sock, &(ioInfo->wsaBuf), 1, NULL, &flags,
+						&(ioInfo->overlapped), NULL);
 			}
-
-			delete ioInfo;
-
-			ioInfo = new PER_IO_DATA;
-			memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-			ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
-			ioInfo->wsaBuf.buf = ioInfo->buffer;
-			ioInfo->serverMode = READ;
-
-			// 계속 Recv
-			WSARecv(sock, &(ioInfo->wsaBuf), 1, NULL, &flags,
-					&(ioInfo->overlapped), NULL);
 		} else {
 			cout << "message send" << endl;
 
