@@ -41,7 +41,6 @@ typedef struct { // socket info
 // 실제 통신 패킷 데이터
 typedef struct {
 	int clientStatus;
-	char name[NAME_SIZE];
 	char message[BUF_SIZE];
 	int direction;
 } PACKET_DATA, *P_PACKET_DATA;
@@ -95,7 +94,6 @@ unsigned WINAPI SendMsg(void *arg) {
 		} else if (clientStatus == STATUS_CHATTIG) { // 채팅중일 때
 
 		}
-		strcpy(packet->name, name);
 		strcpy(packet->message, msg);
 
 		dataBuf.wsaBuf.buf = (char*) packet;
@@ -209,7 +207,7 @@ int main(int argc, char* argv[0]) {
 	overlapped.hEvent = event;
 	P_PACKET_DATA packet;
 	packet = new PACKET_DATA;
-	strcpy(packet->name, name);
+	strcpy(packet->message, name);
 
 	dataBuf.wsaBuf.buf = (char*) packet;
 	dataBuf.wsaBuf.len = sizeof(PACKET_DATA);

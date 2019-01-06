@@ -34,9 +34,9 @@ using namespace std;
 #define ROOM_OUT 3
 
 // 서버에 접속한 유저 정보
+// client 소켓에 대응하는 세션정보
 typedef struct { // socket info
-	SOCKET hClntSock;
-	SOCKADDR_IN clntAdr;
+	char userName[NAME_SIZE];
 	char roomName[NAME_SIZE];
 	int status;
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
@@ -44,7 +44,6 @@ typedef struct { // socket info
 // 실제 통신 패킷 데이터
 typedef struct {
 	int clientStatus;
-	char name[NAME_SIZE];
 	char message[BUF_SIZE];
 	int direction;
 } PACKET_DATA, *P_PACKET_DATA;
@@ -58,9 +57,9 @@ typedef struct { // buffer info
 } PER_IO_DATA, *LPPER_IO_DATA;
 
 // 서버에 접속한 유저 자료 저장
-map<string, LPPER_HANDLE_DATA> userMap;
+map<SOCKET, LPPER_HANDLE_DATA> userMap;
 // 서버의 방 정보 저장
-map<string, list<string> > roomMap;
+map<string, list<SOCKET> > roomMap;
 
 // 임계영역에 필요한 오브젝트
 // WaitForSingleObject는 mutex를 non-singled로 만듬 => 시작
@@ -70,7 +69,7 @@ HANDLE mutex;
 // 본인에게 메세지 전달
 void SendToMeMsg(LPPER_IO_DATA ioInfo, char *msg, SOCKET mySock, int status) {
 
-	cout << "SendToOneMsg " << msg << endl;
+	// cout << "SendToMeMsg " << msg << endl;
 
 	ioInfo = new PER_IO_DATA;
 
@@ -90,10 +89,10 @@ void SendToMeMsg(LPPER_IO_DATA ioInfo, char *msg, SOCKET mySock, int status) {
 }
 
 // 같은 방의 사람들에게 메세지 전달
-void SendToRoomMsg(LPPER_IO_DATA ioInfo, char *msg, list<string> lists,
+void SendToRoomMsg(LPPER_IO_DATA ioInfo, char *msg, list<SOCKET> lists,
 		int status) {
 
-	cout << "SendToRoomMsg " << msg << endl;
+	// cout << "SendToRoomMsg " << msg << endl;
 
 	ioInfo = new PER_IO_DATA;
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
@@ -106,9 +105,9 @@ void SendToRoomMsg(LPPER_IO_DATA ioInfo, char *msg, list<string> lists,
 	ioInfo->serverMode = WRITE;
 
 	WaitForSingleObject(mutex, INFINITE);
-	list<string>::iterator iter;
+	list<SOCKET>::iterator iter;
 	for (iter = lists.begin(); iter != lists.end(); iter++) {
-		WSASend(userMap.find(*iter)->second->hClntSock, &(ioInfo->wsaBuf), 1,
+		WSASend((*iter), &(ioInfo->wsaBuf), 1,
 		NULL, 0, &(ioInfo->overlapped), NULL);
 	}
 	ReleaseMutex(mutex);
@@ -134,12 +133,12 @@ void SendToAllMsg(LPPER_IO_DATA ioInfo, char *msg, SOCKET mySock, int status) {
 	ioInfo->serverMode = WRITE;
 
 	WaitForSingleObject(mutex, INFINITE);
-	map<string, LPPER_HANDLE_DATA>::iterator iter;
+	map<SOCKET, LPPER_HANDLE_DATA>::iterator iter;
 	for (iter = userMap.begin(); iter != userMap.end(); iter++) {
-		if ((*iter->second).hClntSock == mySock) { // 본인 제외
+		if (iter->first == mySock) { // 본인 제외
 			continue;
 		} else {
-			WSASend((*iter->second).hClntSock, &(ioInfo->wsaBuf), 1, NULL, 0,
+			WSASend(iter->first, &(ioInfo->wsaBuf), 1, NULL, 0,
 					&(ioInfo->overlapped), NULL);
 		}
 	}
@@ -150,8 +149,7 @@ void SendToAllMsg(LPPER_IO_DATA ioInfo, char *msg, SOCKET mySock, int status) {
 }
 
 // 초기 접속
-void InitUser(P_PACKET_DATA packet, LPPER_IO_DATA ioInfo, SOCKET sock,
-		LPPER_HANDLE_DATA handleInfo) {
+void InitUser(P_PACKET_DATA packet, LPPER_IO_DATA ioInfo, SOCKET sock) {
 
 	char msg[BUF_SIZE];
 	char name[NAME_SIZE];
@@ -159,16 +157,25 @@ void InitUser(P_PACKET_DATA packet, LPPER_IO_DATA ioInfo, SOCKET sock,
 	packet = new PACKET_DATA;
 
 	memcpy(packet, ioInfo->buffer, sizeof(PACKET_DATA));
-	strcpy(name, packet->name);
-
+	strcpy(name, packet->message);
+	LPPER_HANDLE_DATA handleInfo = new PER_HANDLE_DATA;
 	cout << "START user : " << name << endl;
-	cout << "sock : " << handleInfo->hClntSock << endl;
+	cout << "sock : " << sock << endl;
 	// 유저의 상태 정보 초기화
+	ioInfo = new PER_IO_DATA;
 	handleInfo->status = STATUS_WAITING;
+	strcpy(handleInfo->userName, name);
 	strcpy(handleInfo->roomName, "");
 	WaitForSingleObject(mutex, INFINITE);
-	userMap.insert(pair<string, LPPER_HANDLE_DATA>(name, handleInfo));
+	userMap.insert(pair<SOCKET, LPPER_HANDLE_DATA>(sock, handleInfo));
 	cout << "현재 접속 인원 수 : " << userMap.size() << endl;
+
+	// map<SOCKET, LPPER_HANDLE_DATA>::iterator iter;
+	// for (iter = userMap.begin(); iter != userMap.end(); ++iter) {
+	// 	cout << "접속자 이름 : " << (*iter).second->userName << (*iter).first
+	//	 		<< endl;
+	// }
+
 	ReleaseMutex(mutex);
 
 	delete ioInfo;
@@ -195,60 +202,75 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 	HANDLE hComPort = (HANDLE) pCompPort;
 	SOCKET sock;
 	DWORD bytesTrans;
-	LPPER_HANDLE_DATA handleInfo;
+	// LPPER_HANDLE_DATA handleInfo;
 	LPPER_IO_DATA ioInfo;
 
 	P_PACKET_DATA packet;
 
 	while (true) {
 
-		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &handleInfo,
+		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &sock,
 				(LPOVERLAPPED*) &ioInfo, INFINITE);
-		// IO 완료후 동작 부분
-		sock = handleInfo->hClntSock;
 
 		if (START == ioInfo->serverMode) {
-			cout << "START" << endl;
-			InitUser(packet, ioInfo, sock, handleInfo);
+
+			InitUser(packet, ioInfo, sock);
 
 		} else if (READ == ioInfo->serverMode) {
 			cout << "message received" << endl;
 
+			// IO 완료후 동작 부분
 			char name[BUF_SIZE];
 			char msg[BUF_SIZE];
 			DWORD flags = 0;
 			int direction = 0;
 
+			// 패킷을 받고 이름과 메세지를 초기 저장
+			packet = new PACKET_DATA;
+			memcpy(packet, ioInfo->buffer, sizeof(PACKET_DATA));
+
+			strcpy(name, userMap.find(sock)->second->userName);
+			strcpy(msg, packet->message);
+
 			if (bytesTrans == 0 || strcmp(ioInfo->buffer, "out") == 0) { // 접속 끊김
-				WaitForSingleObject(mutex, INFINITE);
-				map<string, LPPER_HANDLE_DATA>::iterator iter;
-				for (iter = userMap.begin(); iter != userMap.end(); iter++) {
-					if (sock == (*iter).second->hClntSock) {
-						userMap.erase((*iter).first);
-						break;
+				char roomName[NAME_SIZE];
+
+				strcpy(roomName, userMap.find(sock)->second->roomName);
+				// 방이름 임시 저장
+				if (strcmp(roomName, "") != 0) { // 방에 접속중인 경우
+					// 나가는 사람 정보 out
+					(roomMap.find(roomName)->second).remove(sock);
+
+					if ((roomMap.find(roomName)->second).size() == 0) { // 방인원 0명이면 방 삭제
+						roomMap.erase(roomName);
+					} else {
+						char sendMsg[NAME_SIZE + BUF_SIZE + 4];
+						strcpy(sendMsg, name);
+						strcat(sendMsg, " 님이 나갔습니다!");
+
+						SendToRoomMsg(ioInfo, sendMsg,
+								roomMap.find(
+										userMap.find(sock)->second->roomName)->second,
+								STATUS_CHATTIG);
 					}
 				}
+
+				WaitForSingleObject(mutex, INFINITE);
+				userMap.erase(sock); // 접속 소켓 정보 삭제
 				cout << "현재 접속 인원 수 : " << userMap.size() << endl;
 				ReleaseMutex(mutex);
 				closesocket(sock);
-				delete handleInfo;
-				delete ioInfo;
+
+				// delete ioInfo;
 				continue;
 			}
 
-			packet = new PACKET_DATA;
-			memcpy(packet, ioInfo->buffer, sizeof(PACKET_DATA));
-			strcpy(name, packet->name);
-			strcpy(msg, packet->message);
-
-			int nowStatus = ((userMap.find(name))->second)->status;
+			int nowStatus = (userMap.find(sock))->second->status;
 			direction = packet->direction;
-			cout << "nowStatus : " << nowStatus << endl;
-			cout << "msg : " << msg << endl;
 
 			if (nowStatus == STATUS_WAITING) { // 대기실 케이스
 				if (direction == ROOM_MAKE) { // 새로운 방 만들때
-					cout << "ROOM_MAKE" << endl;
+					// cout << "ROOM_MAKE" << endl;
 
 					// 유효성 검증 먼저
 					if (roomMap.count(msg) != 0) { // 방이름 중복
@@ -260,23 +282,23 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 						WaitForSingleObject(mutex, INFINITE);
 						// 새로운 방 정보 저장
-						list<string> chatList;
-						chatList.push_back(name);
+						list<SOCKET> chatList;
+						chatList.push_back(sock);
 						roomMap.insert(
-								pair<string, list<string> >(msg, chatList));
+								pair<string, list<SOCKET> >(msg, chatList));
+
 						// User의 상태 정보 바꾼다
-						strcpy(userMap.find(name)->second->roomName, msg);
-						userMap.find(name)->second->status = STATUS_CHATTIG;
+						strcpy((userMap.find(sock))->second->roomName, msg);
+						(userMap.find(sock))->second->status = STATUS_CHATTIG;
 
 						ReleaseMutex(mutex);
-						strcat(msg, " 방이 개설되었습니다");
-						cout << msg << endl;
+						strcat(msg, " 방이 개설되었습니다. 나가시려면 out을 입력하세요");
 						cout << "현재 서버의 방 갯수 : " << roomMap.size() << endl;
 						SendToMeMsg(ioInfo, msg, sock, STATUS_CHATTIG);
 					}
 
 				} else if (direction == ROOM_ENTER) { // 방 입장 요청
-					cout << "ROOM_ENTER" << endl;
+					// cout << "ROOM_ENTER" << endl;
 
 					// 유효성 검증 먼저
 					if (roomMap.count(msg) == 0) { // 방 못찾음
@@ -286,24 +308,24 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 					} else {
 						WaitForSingleObject(mutex, INFINITE);
 
-						roomMap.find(msg)->second.push_back(name);
-						strcpy(userMap.find(name)->second->roomName, msg);
-						userMap.find(name)->second->status = STATUS_CHATTIG;
+						roomMap.find(msg)->second.push_back(sock);
+						strcpy(userMap.find(sock)->second->roomName, msg);
+						userMap.find(sock)->second->status = STATUS_CHATTIG;
 
 						ReleaseMutex(mutex);
 
 						char sendMsg[NAME_SIZE + BUF_SIZE + 4];
 						strcpy(sendMsg, name);
-						strcat(sendMsg, " 님이 입장하셨었습니다");
-						cout << sendMsg << endl;
+						strcat(sendMsg, " 님이 입장하셨었습니다 나가시려면 out을 입력하세요");
 						SendToRoomMsg(ioInfo, sendMsg,
 								roomMap.find(msg)->second,
 								STATUS_CHATTIG);
 					}
+
 				} else if (strcmp(msg, "1") == 0) { // 방 정보 요청시
 
 					WaitForSingleObject(mutex, INFINITE);
-					map<string, list<string> >::iterator iter;
+					map<string, list<SOCKET> >::iterator iter;
 					char str[BUF_SIZE];
 					if (roomMap.size() == 0) {
 						strcpy(str, "만들어진 방이 없습니다\n");
@@ -328,27 +350,34 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 				if (bytesTrans == 0 || strcmp(msg, "out") == 0
 						|| strcmp(msg, "Q") == 0 || strcmp(msg, "q") == 0) { // 채팅방 나감
-					cout << "채팅방 나가기" << endl;
+						// cout << "채팅방 나가기 " << endl;
 
 					char sendMsg[NAME_SIZE + BUF_SIZE + 4];
 					strcpy(sendMsg, name);
 					strcat(sendMsg, " 님이 나갔습니다!");
-					cout << sendMsg << endl;
 
 					SendToRoomMsg(ioInfo, sendMsg,
-							roomMap.find(userMap.find(name)->second->roomName)->second,
+							roomMap.find(userMap.find(sock)->second->roomName)->second,
 							STATUS_CHATTIG);
 					char roomName[NAME_SIZE];
-					strcpy(roomName, userMap.find(name)->second->roomName);
+					// 임계영역 제거해도 될것 같음
+					WaitForSingleObject(mutex, INFINITE);
+
+					strcpy(roomName, userMap.find(sock)->second->roomName);
 					// 방이름 임시 저장
-					strcpy(userMap.find(name)->second->roomName, "");
-					userMap.find(name)->second->status = STATUS_WAITING;
+					strcpy(userMap.find(sock)->second->roomName, "");
+					userMap.find(sock)->second->status = STATUS_WAITING;
+
+					ReleaseMutex(mutex);
+					// 임계영역 제거해도 될것 같음
+
 					strcpy(msg, "1.방 정보 보기, 2.방 만들기 3.방 입장하기");
 					SendToMeMsg(ioInfo, msg, sock, STATUS_WAITING);
 					cout << "나가는 사람 name : " << name << endl;
+					cout << "나가는 방 name : " << roomName << endl;
 
 					// 나가는 사람 정보 out
-					(roomMap.find(roomName)->second).remove(name);
+					(roomMap.find(roomName)->second).remove(sock);
 
 					if ((roomMap.find(roomName)->second).size() == 0) { // 방인원 0명이면 방 삭제
 						roomMap.erase(roomName);
@@ -360,7 +389,7 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 					strcat(sendMsg, " : ");
 					strcat(sendMsg, msg);
 					SendToRoomMsg(ioInfo, sendMsg,
-							roomMap.find(userMap.find(name)->second->roomName)->second,
+							roomMap.find(userMap.find(sock)->second->roomName)->second,
 							STATUS_CHATTIG);
 				}
 
@@ -449,14 +478,12 @@ int main(int argc, char* argv[]) {
 		hClientSock = accept(hServSock, (SOCKADDR*) &clntAdr, &addrLen);
 
 		handleInfo = new PER_HANDLE_DATA;
-		handleInfo->hClntSock = hClientSock;
-		memcpy(&(handleInfo->clntAdr), &clntAdr, addrLen);
 
 		cout << "Connected client IP " << inet_ntoa(clntAdr.sin_addr) << endl;
 
 		// Completion Port 와 소켓 연결
 		CreateIoCompletionPort((HANDLE) hClientSock, hComPort,
-				(DWORD) handleInfo, 0);
+				(DWORD) hClientSock, 0);
 
 		ioInfo = new PER_IO_DATA;
 		memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
@@ -465,8 +492,8 @@ int main(int argc, char* argv[]) {
 		ioInfo->wsaBuf.buf = ioInfo->buffer;
 		ioInfo->serverMode = START;
 
-		WSARecv(handleInfo->hClntSock, &(ioInfo->wsaBuf), 1,
-				(LPDWORD) &recvBytes, (LPDWORD) &flags, &(ioInfo->overlapped),
+		WSARecv(hClientSock, &(ioInfo->wsaBuf), 1, (LPDWORD) &recvBytes,
+				(LPDWORD) &flags, &(ioInfo->overlapped),
 				NULL);
 
 		delete handleInfo;
