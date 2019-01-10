@@ -47,6 +47,14 @@ typedef struct {
 	char message3[NAME_SIZE];
 	int direction;
 } PACKET_DATA, *P_PACKET_DATA;
+
+// 비동기 통신에 필요한 구조체
+typedef struct { // buffer info
+	OVERLAPPED overlapped;
+	WSABUF wsaBuf;
+	char buffer[sizeof(PACKET_DATA)];  // 버퍼에 PACKET_DATA가 들어갈 것이므로 크기 맞춤
+	int serverMode;
+} PER_IO_DATA, *LPPER_IO_DATA;
 char loginBeforeMessage[] = "1.계정생성 2.로그인하기 3.계정 리스트 4.종료 5.콘솔지우기";
 char waitRoomMessage[] =
 		"1.방 정보 보기 2.방 만들기 3.방 입장하기 4.유저 정보 5.귓속말 6.로그아웃 7.콘솔지우기";

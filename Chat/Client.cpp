@@ -1,6 +1,6 @@
 //============================================================================
 // Name        : Client.cpp
-// Author      : 
+// Author      :
 // Version     :
 // Copyright   : Your copyright notice
 // Description : Hello World in C++, Ansi-style
@@ -14,7 +14,7 @@
 #include "common.h"
 
 // 현재 클라이언트 상태 => 대기실 => 추후 로그인 이전으로 바뀔것
-int clientStatus = STATUS_LOGOUT;
+int clientStatus;
 
 using namespace std;
 
@@ -22,14 +22,6 @@ typedef struct { // socket info
 	SOCKET hClntSock;
 	SOCKADDR_IN clntAdr;
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
-
-// 비동기 통신에 필요한 구조체
-typedef struct { // buffer info
-	OVERLAPPED overlapped;
-	WSABUF wsaBuf;
-	char buffer[sizeof(PACKET_DATA)];
-	int serverMode;
-} PER_IO_DATA, *LPPER_IO_DATA;
 
 // fgets와 \n제거 공통함수 버퍼 오버플로우방지
 void Gets(char *message, int size) {
@@ -49,23 +41,10 @@ unsigned WINAPI SendMsgThread(void *arg) {
 	while (1) {
 		Gets(msg, BUF_SIZE);
 
-		if (strcmp(msg, "\n") == 0) { // 입력 안하면 반응 없음
-			continue;
-		} else if (clientStatus == STATUS_WAITING // 대기실
-				&& (!strcmp(msg, "q\n") || !strcmp(msg, "Q\n")
-						|| !strcmp(msg, "out\n"))) {
-			// 채팅 끝남 메시지
-			send(clientSock, "out", sizeof("out"), 0);
-			closesocket(clientSock);
-			exit(1);
-		}
-
 		PER_IO_DATA dataBuf;
 		WSAOVERLAPPED overlapped;
 
-		WSAEVENT event = WSACreateEvent();
 		memset(&overlapped, 0, sizeof(OVERLAPPED));
-		overlapped.hEvent = event;
 
 		P_PACKET_DATA packet;
 		packet = new PACKET_DATA;
@@ -76,7 +55,7 @@ unsigned WINAPI SendMsgThread(void *arg) {
 					cout << "계정을 입력해 주세요" << endl;
 					Gets(msg, BUF_SIZE);
 
-					if (strcmp(msg, "") != 0 && strcmp(msg, "\n") != 0) {
+					if (strcmp(msg, "") != 0) {
 						break;
 					}
 				}
@@ -85,14 +64,21 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				char password2[NAME_SIZE];
 
 				char nickname[NAME_SIZE];
-				cout << "비밀번호를 입력해 주세요" << endl;
-				Gets(password1, NAME_SIZE);
+				while (true) {
+					cout << "비밀번호를 입력해 주세요" << endl;
+					Gets(password1, NAME_SIZE);
+					if (strcmp(password1, "") == 0) {
+						continue;
+					} else {
+						break;
+					}
+				}
 
 				while (true) {
 					cout << "비밀번호를 한번더 입력해 주세요" << endl;
 					Gets(password2, NAME_SIZE);
 
-					if (strcmp(msg, "") == 0 || strcmp(msg, "\n") == 0) {
+					if (strcmp(password2, "") == 0) {
 						continue;
 					}
 
@@ -107,8 +93,7 @@ unsigned WINAPI SendMsgThread(void *arg) {
 					cout << "닉네임을 입력해 주세요" << endl;
 					Gets(nickname, NAME_SIZE);
 
-					if (strcmp(nickname, "") != 0
-							&& strcmp(nickname, "\n") != 0) {
+					if (strcmp(nickname, "") != 0) {
 						break;
 					}
 				}
@@ -139,6 +124,8 @@ unsigned WINAPI SendMsgThread(void *arg) {
 			} else if (strcmp(msg, "5") == 0) { // 콘솔지우기
 				system("cls");
 				cout << loginBeforeMessage << endl;
+				continue;
+			} else if (strcmp(msg, "") == 0) { // 입력안하면 Send안함
 				continue;
 			}
 
@@ -212,7 +199,7 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 			if (clientStatus != packet->clientStatus) { // 상태 변경시 콘솔 clear
 				system("cls");
 			}
-			clientStatus = packet->clientStatus;
+			clientStatus = packet->clientStatus; // clear이후 client상태변경 해준다
 			strncpy(nameMsg, packet->message, BUF_SIZE);
 			cout << nameMsg << endl;
 		} else if (packet->clientStatus == STATUS_WHISPER) { // 귓속말 상태일때는 클라이언트 상태변화 없음
@@ -225,14 +212,15 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 			return -1;
 		}
 
-		int recvBytes, flags = 0;
+		DWORD recvBytes = 0;
+		DWORD flags = 0;
 		ioInfo = new PER_IO_DATA;
 		ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
 		ioInfo->wsaBuf.buf = ioInfo->buffer;
 		ioInfo->serverMode = READ;
 
-		WSARecv(sock, &(ioInfo->wsaBuf), 1, (LPDWORD) &recvBytes,
-				(LPDWORD) &flags, &(ioInfo->overlapped),
+		WSARecv(sock, &(ioInfo->wsaBuf), 1, &recvBytes, &flags,
+				&(ioInfo->overlapped),
 				NULL);
 
 	}
