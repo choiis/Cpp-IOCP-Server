@@ -159,7 +159,7 @@ unsigned WINAPI SendMsgThread(void *arg) {
 		} else if (clientStatus == STATUS_CHATTIG) { // 채팅중일 때
 			if (strcmp(msg, "") == 0) { // 입력안하면 Send안함
 				continue;
-			} else if (strcmp(msg, "clear") == 0) { // 콘솔창 clear
+			} else if (strcmp(msg, "\\clear") == 0) { // 콘솔창 clear
 				system("cls");
 				cout << chatRoomMessage << endl;
 				continue;
@@ -176,17 +176,30 @@ unsigned WINAPI SendMsgThread(void *arg) {
 	return 0;
 }
 
+// Recv 공통함수
+void Recv(SOCKET sock, DWORD recvBytes, DWORD flags) {
+	LPPER_IO_DATA ioInfo = new PER_IO_DATA;
+	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
+	ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
+	ioInfo->wsaBuf.buf = ioInfo->buffer;
+	ioInfo->serverMode = READ; // GetQueuedCompletionStatus 이후 분기가 Recv로 갈수 있게
+
+	// 계속 Recv
+	WSARecv(sock, &(ioInfo->wsaBuf), 1, &recvBytes, &flags,
+			&(ioInfo->overlapped),
+			NULL);
+}
+
 // 수신을 담당할 스레드
 unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 
 	SOCKET sock;
 	char nameMsg[BUF_SIZE];
 	DWORD bytesTrans;
-	LPPER_HANDLE_DATA handleInfo;
 	LPPER_IO_DATA ioInfo;
 
 	while (1) {
-		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &handleInfo,
+		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &sock,
 				(LPOVERLAPPED*) &ioInfo, INFINITE);
 
 		P_PACKET_DATA packet = new PACKET_DATA;
@@ -207,22 +220,14 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 			cout << nameMsg << endl;
 		}
 
-		sock = handleInfo->hClntSock;
 		if (bytesTrans == 0) {
 			return -1;
 		}
 
 		DWORD recvBytes = 0;
 		DWORD flags = 0;
-		ioInfo = new PER_IO_DATA;
-		ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
-		ioInfo->wsaBuf.buf = ioInfo->buffer;
-		ioInfo->serverMode = READ;
 
-		WSARecv(sock, &(ioInfo->wsaBuf), 1, &recvBytes, &flags,
-				&(ioInfo->overlapped),
-				NULL);
-
+		Recv(sock, recvBytes, flags);
 	}
 	return 0;
 }
@@ -231,7 +236,7 @@ int main(int argc, char* argv[0]) {
 	WSADATA wsaData;
 	SOCKET hSocket;
 	SOCKADDR_IN servAddr;
-	LPPER_HANDLE_DATA handleInfo;
+
 	HANDLE sendThread, recvThread;
 
 	// Socket lib의 초기화
@@ -264,13 +269,8 @@ int main(int argc, char* argv[0]) {
 	// Completion Port 생성
 	HANDLE hComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 
-	handleInfo = new PER_HANDLE_DATA;
-	handleInfo->hClntSock = hSocket;
-	int addrLen = sizeof(servAddr);
-	memcpy(&(handleInfo->clntAdr), &servAddr, addrLen);
-
 	// Completion Port 와 소켓 연결
-	CreateIoCompletionPort((HANDLE) hSocket, hComPort, (DWORD) handleInfo, 0);
+	CreateIoCompletionPort((HANDLE) hSocket, hComPort, (DWORD) hSocket, 0);
 
 	// 수신 스레드 동작
 	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다

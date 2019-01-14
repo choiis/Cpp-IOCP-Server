@@ -59,6 +59,6 @@ char loginBeforeMessage[] = "1.계정생성 2.로그인하기 3.계정 리스트 4.종료 5.콘솔
 char waitRoomMessage[] =
 		"1.방 정보 보기 2.방 만들기 3.방 입장하기 4.유저 정보 5.귓속말 6.로그아웃 7.콘솔지우기";
 char errorMessage[] = "잘못된 명령어 입니다\n";
-char chatRoomMessage[] = "나가시려면 out을 콘솔지우기는 clear를 입력하세요";
+char chatRoomMessage[] = "나가시려면 \\out을 콘솔지우기는 \\clear를 입력하세요";
 
 #endif /* COMMON_H_ */

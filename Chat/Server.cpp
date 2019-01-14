@@ -60,11 +60,10 @@ void SendToOneMsg(char *msg, SOCKET mySock, int status) {
 
 	WSASend(mySock, &(ioInfo->wsaBuf), 1, NULL, 0, &(ioInfo->overlapped), NULL);
 
-	delete packet;
 }
 
 // 같은 방의 사람들에게 메세지 전달
-void SendToRoomMsg(char *msg, list<SOCKET> lists, int status) {
+void SendToRoomMsg(char *msg, list<SOCKET> &lists, int status) {
 
 	LPPER_IO_DATA ioInfo = new PER_IO_DATA;
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
@@ -83,7 +82,7 @@ void SendToRoomMsg(char *msg, list<SOCKET> lists, int status) {
 		NULL, 0, &(ioInfo->overlapped), NULL);
 	}
 	LeaveCriticalSection(&cs);
-	delete packet;
+
 }
 
 // Recv 공통함수
@@ -159,12 +158,13 @@ void ClientExit(SOCKET sock) {
 			if (strcmp(roomName, "") != 0) { // 방에 접속중인 경우
 				// 나가는 사람 정보 out
 
-				EnterCriticalSection(&cs);
 				if (roomMap.find(roomName) != roomMap.end()) { // null 체크 우선
 					(roomMap.find(roomName)->second).remove(sock);
 
 					if ((roomMap.find(roomName)->second).size() == 0) { // 방인원 0명이면 방 삭제
+						EnterCriticalSection(&cs);
 						roomMap.erase(roomName);
+						LeaveCriticalSection(&cs);
 					} else {
 						char sendMsg[BUF_SIZE];
 						// 이름먼저 복사 NAME_SIZE까지
@@ -180,7 +180,6 @@ void ClientExit(SOCKET sock) {
 						}
 					}
 				}
-				LeaveCriticalSection(&cs);
 			}
 			EnterCriticalSection(&cs);
 			userMap.erase(sock); // 접속 소켓 정보 삭제
@@ -456,7 +455,7 @@ void StatusChat(SOCKET sock, P_PACKET_DATA packet) {
 	strncpy(name, userMap.find(sock)->second->userName, NAME_SIZE);
 	strncpy(msg, packet->message, BUF_SIZE);
 
-	if (strcmp(msg, "out") == 0) { // 채팅방 나감
+	if (strcmp(msg, "\\out") == 0) { // 채팅방 나감
 
 		char sendMsg[BUF_SIZE];
 		char roomName[NAME_SIZE];
@@ -527,7 +526,7 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 		if (READ == ioInfo->serverMode) { // Recv 끝난경우
 			cout << "message received" << endl;
-
+			cout << "bytesTrans : " << bytesTrans << endl;
 			// IO 완료후 동작 부분
 			DWORD recvBytes = 0;
 			DWORD flags = 0;
