@@ -52,14 +52,23 @@ void SendToOneMsg(char *msg, SOCKET mySock, int status) {
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 	P_PACKET_DATA packet = new PACKET_DATA;
 
-	strncpy(packet->message, msg, BUF_SIZE);
-	packet->clientStatus = status;
-	ioInfo->wsaBuf.buf = (char*) packet;
-	ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
+	int len = strlen(msg) + 1;
+	char *p;
+	p = new char[len + (3 * sizeof(int))];
+	memcpy(p, &len, 4); // dataSize;
+	memcpy(((char*) p) + 4, &status, 4); // status;
+	memcpy(((char*) p) + 8, &status, 4); // direction;
+
+	packet->message = new char[len];
+	strncpy(packet->message, msg, len - 1);
+	packet->message[strlen(msg)] = '\0';
+	memcpy(((char*) p) + 12, msg, len); // status
+
+	ioInfo->wsaBuf.buf = (char*) p;
+	ioInfo->wsaBuf.len = len + (3 * sizeof(int));
 	ioInfo->serverMode = WRITE; // GetQueuedCompletionStatus 이후 분기가 Send로 갈수 있게
 
 	WSASend(mySock, &(ioInfo->wsaBuf), 1, NULL, 0, &(ioInfo->overlapped), NULL);
-
 }
 
 // 같은 방의 사람들에게 메세지 전달
@@ -69,10 +78,20 @@ void SendToRoomMsg(char *msg, list<SOCKET> &lists, int status) {
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 	P_PACKET_DATA packet = new PACKET_DATA;
 
-	strncpy(packet->message, msg, BUF_SIZE);
-	packet->clientStatus = status;
-	ioInfo->wsaBuf.buf = (char*) packet;
-	ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
+	int len = strlen(msg) + 1;
+	char *p;
+	p = new char[len + (3 * sizeof(int))];
+	memcpy(p, &len, 4); // dataSize;
+	memcpy(((char*) p) + 4, &status, 4); // status;
+	memcpy(((char*) p) + 8, &status, 4); // direction;
+
+	packet->message = new char[len];
+	strncpy(packet->message, msg, len - 1);
+	packet->message[strlen(msg)] = '\0';
+	memcpy(((char*) p) + 12, msg, len); // status
+
+	ioInfo->wsaBuf.buf = (char*) p;
+	ioInfo->wsaBuf.len = len + (3 * sizeof(int));
 	ioInfo->serverMode = WRITE;  // GetQueuedCompletionStatus 이후 분기가 Send로 갈수 있게
 
 	list<SOCKET>::iterator iter;
@@ -85,14 +104,29 @@ void SendToRoomMsg(char *msg, list<SOCKET> &lists, int status) {
 
 }
 
+// Recv 계속 공통함수
+void RecvMore(SOCKET sock, DWORD recvBytes, DWORD flags, LPPER_IO_DATA ioInfo,
+		DWORD remainSize) {
+
+	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
+	ioInfo->wsaBuf.len = remainSize;
+	memset(ioInfo->buffer, 0, SIZE);
+	ioInfo->wsaBuf.buf = ioInfo->buffer;
+	ioInfo->serverMode = READ_MORE; // GetQueuedCompletionStatus 이후 분기가 Recv로 갈수 있게
+	// 계속 Recv
+	WSARecv(sock, &(ioInfo->wsaBuf), 1, &recvBytes, &flags,
+			&(ioInfo->overlapped),
+			NULL);
+}
 // Recv 공통함수
 void Recv(SOCKET sock, DWORD recvBytes, DWORD flags) {
 	LPPER_IO_DATA ioInfo = new PER_IO_DATA;
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-	ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
+	ioInfo->wsaBuf.len = SIZE;
 	ioInfo->wsaBuf.buf = ioInfo->buffer;
 	ioInfo->serverMode = READ; // GetQueuedCompletionStatus 이후 분기가 Recv로 갈수 있게
-
+	ioInfo->recvByte = 0;
+	ioInfo->totByte = 0;
 	// 계속 Recv
 	WSARecv(sock, &(ioInfo->wsaBuf), 1, &recvBytes, &flags,
 			&(ioInfo->overlapped),
@@ -101,12 +135,12 @@ void Recv(SOCKET sock, DWORD recvBytes, DWORD flags) {
 
 // 초기 로그인
 // 세션정보 추가
-void InitUser(P_PACKET_DATA packet, SOCKET sock) {
+void InitUser(char *id, SOCKET sock) {
 
 	char msg[BUF_SIZE];
 	char name[NAME_SIZE];
 
-	strncpy(name, idMap.find(packet->message)->second.nickname, NAME_SIZE);
+	strncpy(name, idMap.find(id)->second.nickname, NAME_SIZE);
 
 	LPPER_HANDLE_DATA handleInfo = new PER_HANDLE_DATA;
 	cout << "START user : " << name << endl;
@@ -115,7 +149,7 @@ void InitUser(P_PACKET_DATA packet, SOCKET sock) {
 	// ioInfo = new PER_IO_DATA;
 	handleInfo->status = STATUS_WAITING;
 
-	strncpy(handleInfo->userId, packet->message, NAME_SIZE);
+	strncpy(handleInfo->userId, id, NAME_SIZE);
 	strncpy(handleInfo->userName, name, NAME_SIZE);
 	strncpy(handleInfo->roomName, "", NAME_SIZE);
 	EnterCriticalSection(&cs);
@@ -123,7 +157,7 @@ void InitUser(P_PACKET_DATA packet, SOCKET sock) {
 	userMap.insert(pair<SOCKET, LPPER_HANDLE_DATA>(sock, handleInfo));
 
 	// id의 key값은 유저 이름이 아니라 아이디!!
-	idMap.find(packet->message)->second.logMode = NOW_LOGIN;
+	idMap.find(id)->second.logMode = NOW_LOGIN;
 
 	cout << "현재 접속 인원 수 : " << userMap.size() << endl;
 
@@ -193,29 +227,37 @@ void ClientExit(SOCKET sock) {
 
 // 로그인 이전 로직처리
 // 세션값 없을 때 로직
-void StatusLogout(SOCKET sock, P_PACKET_DATA packet) {
+void StatusLogout(SOCKET sock, int status, int direction, char *message) {
 
-	if (packet->clientStatus == STATUS_LOGOUT) {
+	if (status == STATUS_LOGOUT) {
 
 		// memcpy 부분 삭제
 		char msg[BUF_SIZE];
 
-		if (packet->direction == USER_MAKE) { // 1번 계정생성
+		if (direction == USER_MAKE) { // 1번 계정생성
 			cout << "USER MAKE" << endl;
+			USER_DATA userData;
+			char *sArr[3] = { NULL, };
+			char *ptr = strtok(message, "\\"); // 공백 문자열을 기준으로 문자열을 자름
+			int i = 0;
+			while (ptr != NULL)            // 자른 문자열이 나오지 않을 때까지 반복
+			{
+				sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
+				i++;                       // 인덱스 증가
+				ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
+			}
 			// 유효성 검증 필요
 			EnterCriticalSection(&cs);
-			if (idMap.find(packet->message) == idMap.end()) { // ID 중복체크
+			if (idMap.find(sArr[0]) == idMap.end()) { // ID 중복체크
 
-				USER_DATA userData;
-				userData.password = string(packet->message2);
-				strncpy(userData.nickname, packet->message3, NAME_SIZE);
+				userData.password = string(sArr[1]);
+				strncpy(userData.nickname, sArr[2], NAME_SIZE);
 				userData.logMode = NOW_LOGOUT;
 
 				idMap.insert(
-						pair<string, USER_DATA>(string(packet->message),
-								userData));
+						pair<string, USER_DATA>(string(sArr[0]), userData));
 
-				strncpy(msg, packet->message, BUF_SIZE);
+				strncpy(msg, sArr[0], BUF_SIZE);
 				strcat(msg, " 계정 생성 완료!\n");
 				strcat(msg, loginBeforeMessage);
 				SendToOneMsg(msg, sock, STATUS_LOGOUT);
@@ -225,21 +267,31 @@ void StatusLogout(SOCKET sock, P_PACKET_DATA packet) {
 				SendToOneMsg(msg, sock, STATUS_LOGOUT);
 			}
 			LeaveCriticalSection(&cs);
-		} else if (packet->direction == USER_ENTER) { // 2번 로그인 시도
+		} else if (direction == USER_ENTER) { // 2번 로그인 시도
 			cout << "USER ENTER" << endl;
-			if (idMap.find(packet->message) == idMap.end()) { // 계정 없음
+			char *sArr[2] = { NULL, };
+			char *ptr = strtok(message, "\\"); // 공백 문자열을 기준으로 문자열을 자름
+			int i = 0;
+			while (ptr != NULL)            // 자른 문자열이 나오지 않을 때까지 반복
+			{
+				sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
+				i++;                       // 인덱스 증가
+				ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
+			}
+
+			if (idMap.find(sArr[0]) == idMap.end()) { // 계정 없음
 				strncpy(msg, "없는 계정입니다 아이디를 확인하세요!\n", BUF_SIZE);
 				strcat(msg, loginBeforeMessage);
 				SendToOneMsg(msg, sock, STATUS_LOGOUT);
-			} else if (idMap.find(packet->message)->second.password.compare(
-					packet->message2) == 0) { // 비밀번호 일치
+			} else if (idMap.find(sArr[0])->second.password.compare(
+					string(sArr[1])) == 0) { // 비밀번호 일치
 
-				if (idMap.find(packet->message)->second.logMode == NOW_LOGIN) { // 중복로그인 유효성 검사
+				if (idMap.find(sArr[0])->second.logMode == NOW_LOGIN) { // 중복로그인 유효성 검사
 					strncpy(msg, "중복 로그인은 안됩니다!\n", BUF_SIZE);
 					strcat(msg, loginBeforeMessage);
 					SendToOneMsg(msg, sock, STATUS_LOGOUT);
 				} else { // 중복로그인 X
-					InitUser(packet, sock); // 세션정보 저장
+					InitUser(sArr[0], sock); // 세션정보 저장
 				}
 
 			} else { // 비밀번호 틀림
@@ -248,7 +300,7 @@ void StatusLogout(SOCKET sock, P_PACKET_DATA packet) {
 				SendToOneMsg(msg, sock, STATUS_LOGOUT);
 			}
 
-		} else if (packet->direction == USER_LIST) { // 유저들 정보 요청
+		} else if (direction == USER_LIST) { // 유저들 정보 요청
 			cout << "USER LIST" << endl;
 			char userList[BUF_SIZE];
 			strncpy(userList, "아이디 정보 리스트", BUF_SIZE);
@@ -277,16 +329,16 @@ void StatusLogout(SOCKET sock, P_PACKET_DATA packet) {
 
 // 대기실에서의 로직 처리
 // 세션값 있음
-void StatusWait(SOCKET sock, P_PACKET_DATA packet) {
+void StatusWait(SOCKET sock, int status, int direction, char *message) {
 
 	char name[BUF_SIZE];
 	char msg[BUF_SIZE];
-	int direction = packet->direction;
 	// 세션에서 이름 정보 리턴
 	strncpy(name, userMap.find(sock)->second->userName, BUF_SIZE);
-	strncpy(msg, packet->message, BUF_SIZE);
+	strncpy(msg, message, BUF_SIZE);
 	if (direction == ROOM_MAKE) { // 새로운 방 만들때
 		cout << "ROOM MAKE" << endl;
+		strncpy(msg, message, BUF_SIZE);
 		// 유효성 검증 먼저
 		if (roomMap.count(msg) != 0) { // 방이름 중복
 			strncpy(msg, "이미 있는 방 이름입니다!\n", BUF_SIZE);
@@ -390,7 +442,17 @@ void StatusWait(SOCKET sock, P_PACKET_DATA packet) {
 		SendToOneMsg(str, sock, STATUS_WAITING);
 	} else if (direction == WHISPER) { // 귓속말
 		cout << "WHISPER " << endl;
-		strncpy(name, packet->message2, NAME_SIZE);
+		char *sArr[2] = { NULL, };
+		char *ptr = strtok(message, "\\"); // 공백 문자열을 기준으로 문자열을 자름
+		int i = 0;
+		while (ptr != NULL)            // 자른 문자열이 나오지 않을 때까지 반복
+		{
+			sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
+			i++;                       // 인덱스 증가
+			ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
+		}
+		strncpy(name, sArr[0], NAME_SIZE);
+		strncpy(msg, sArr[1], NAME_SIZE);
 
 		map<SOCKET, LPPER_HANDLE_DATA>::iterator iter;
 		char sendMsg[BUF_SIZE];
@@ -446,14 +508,14 @@ void StatusWait(SOCKET sock, P_PACKET_DATA packet) {
 
 // 채팅방에서의 로직 처리
 // 세션값 있음
-void StatusChat(SOCKET sock, P_PACKET_DATA packet) {
+void StatusChat(SOCKET sock, int status, int direction, char *message) {
 
 	char name[NAME_SIZE];
 	char msg[BUF_SIZE];
 
 	// 세션에서 이름 정보 리턴
 	strncpy(name, userMap.find(sock)->second->userName, NAME_SIZE);
-	strncpy(msg, packet->message, BUF_SIZE);
+	strncpy(msg, message, BUF_SIZE);
 
 	if (strcmp(msg, "\\out") == 0) { // 채팅방 나감
 
@@ -517,51 +579,76 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 	DWORD bytesTrans;
 	// LPPER_HANDLE_DATA handleInfo;
 	LPPER_IO_DATA ioInfo;
-	P_PACKET_DATA packet;
 
 	while (true) {
 
-		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &sock,
-				(LPOVERLAPPED*) &ioInfo, INFINITE);
+		bool success = GetQueuedCompletionStatus(hComPort, &bytesTrans,
+				(LPDWORD) &sock, (LPOVERLAPPED*) &ioInfo, INFINITE);
 
-		if (READ == ioInfo->serverMode) { // Recv 끝난경우
-			cout << "message received" << endl;
-			cout << "bytesTrans : " << bytesTrans << endl;
-			// IO 완료후 동작 부분
-			DWORD recvBytes = 0;
-			DWORD flags = 0;
-			// 패킷을 받고 이름과 메세지를 초기 저장
-			packet = new PACKET_DATA;
-			memcpy(packet, ioInfo->buffer, sizeof(PACKET_DATA));
+		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
+			// 콘솔 강제종료 처리
+			ClientExit(sock);
 
-			if (bytesTrans == 0) { // 접속 끊김 콘솔 강제 종료
-				// 콘솔 강제종료 처리
-				ClientExit(sock);
+		} else if (READ == ioInfo->serverMode
+				|| READ_MORE == ioInfo->serverMode) { // Recv 끝난경우
 
-			} else if (userMap.find(sock) == userMap.end()) { // 세션값 없음 => 로그인 이전 분기
-					// 로그인 이전 로직 처리
-				StatusLogout(sock, packet);
+				// IO 완료후 동작 부분
+			if (READ_MORE != ioInfo->serverMode) {
+				memcpy(&(ioInfo->bodySize), ioInfo->buffer, 4);
+				ioInfo->recvBuffer = new char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+				memcpy(((char*) ioInfo->recvBuffer), ioInfo->buffer,
+						bytesTrans);
 
-				// Recv는 계속한다
-				Recv(sock, recvBytes, flags);
-
-				// 세션값 없음 => 로그인 이전 분기 끝
-			} else { // 세션값 있을때 => 대기방 또는 채팅방 상태
-
-				int status = userMap.find(sock)->second->status;
-
-				if (status == STATUS_WAITING) { // 대기실 케이스
-					// 대기실 처리 함수
-					StatusWait(sock, packet);
-				} else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
-					// 채팅방 처리 함수
-					StatusChat(sock, packet);
+			} else {
+				if (ioInfo->recvByte > 12) {
+					memcpy(((char*) ioInfo->recvBuffer) + ioInfo->recvByte,
+							ioInfo->buffer, bytesTrans);
 				}
-
-				// Recv는 계속한다
-				Recv(sock, recvBytes, flags);
 			}
-		} else { // Send 끝난경우
+			if (ioInfo->totByte == 0) {
+				ioInfo->totByte = ioInfo->bodySize + 12;
+			}
+			ioInfo->recvByte += bytesTrans;
+			if (ioInfo->recvByte < ioInfo->totByte) { // 받은 패킷 부족 -> 더받아야함
+				DWORD recvBytes = 0;
+				DWORD flags = 0;
+				RecvMore(sock, recvBytes, flags, ioInfo,
+						ioInfo->totByte - ioInfo->recvByte); // 패킷 더받기
+			} else {
+
+				DWORD recvBytes = 0;
+				DWORD flags = 0;
+				int status;
+				int direction;
+				memcpy(&status, ((char*) ioInfo->recvBuffer) + 4, 4);
+				memcpy(&direction, ((char*) ioInfo->recvBuffer) + 8, 4);
+				char *msg = new char[ioInfo->bodySize];
+				memcpy(msg, ((char*) ioInfo->recvBuffer) + 12,
+						ioInfo->bodySize);
+				if (userMap.find(sock) == userMap.end()) { // 세션값 없음 => 로그인 이전 분기
+						// 로그인 이전 로직 처리
+					StatusLogout(sock, status, direction, msg);
+					// Recv는 계속한다
+					Recv(sock, recvBytes, flags);
+					// 세션값 없음 => 로그인 이전 분기 끝
+				} else { // 세션값 있을때 => 대기방 또는 채팅방 상태
+
+					int status = userMap.find(sock)->second->status;
+
+					if (status == STATUS_WAITING) { // 대기실 케이스
+						// 대기실 처리 함수
+						StatusWait(sock, status, direction, msg);
+					} else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
+						// 채팅방 처리 함수
+						StatusChat(sock, status, direction, msg);
+					}
+
+					// Recv는 계속한다
+					Recv(sock, recvBytes, flags);
+				}
+			}
+
+		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
 			cout << "message send" << endl;
 		}
 	}
@@ -573,7 +660,6 @@ int main(int argc, char* argv[]) {
 	WSADATA wsaData;
 	HANDLE hComPort;
 	SYSTEM_INFO sysInfo;
-	LPPER_HANDLE_DATA handleInfo;
 
 	SOCKET hServSock;
 	SOCKADDR_IN servAdr;
@@ -641,8 +727,6 @@ int main(int argc, char* argv[]) {
 		cout << "accept wait" << endl;
 		hClientSock = accept(hServSock, (SOCKADDR*) &clntAdr, &addrLen);
 
-		handleInfo = new PER_HANDLE_DATA;
-
 		cout << "Connected client IP " << inet_ntoa(clntAdr.sin_addr) << endl;
 
 		// Completion Port 와 accept한 소켓 연결
@@ -657,7 +741,6 @@ int main(int argc, char* argv[]) {
 		strcat(msg, loginBeforeMessage);
 		SendToOneMsg(msg, hClientSock, STATUS_LOGOUT);
 
-		delete handleInfo;
 	}
 
 	// 임계영역 Object 반환

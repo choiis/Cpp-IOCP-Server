@@ -23,6 +23,36 @@ typedef struct { // socket info
 	SOCKADDR_IN clntAdr;
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
 
+// Recv 계속 공통함수
+void RecvMore(SOCKET sock, DWORD recvBytes, DWORD flags, LPPER_IO_DATA ioInfo) {
+
+	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
+	ioInfo->wsaBuf.len = SIZE;
+	memset(ioInfo->buffer, 0, SIZE);
+	ioInfo->wsaBuf.buf = ioInfo->buffer;
+	ioInfo->serverMode = READ_MORE; // GetQueuedCompletionStatus 이후 분기가 Recv로 갈수 있게
+
+	// 계속 Recv
+	WSARecv(sock, &(ioInfo->wsaBuf), 1, &recvBytes, &flags,
+			&(ioInfo->overlapped),
+			NULL);
+}
+// Recv 공통함수
+void Recv(SOCKET sock, DWORD recvBytes, DWORD flags) {
+	LPPER_IO_DATA ioInfo = new PER_IO_DATA;
+	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
+	ioInfo->wsaBuf.len = SIZE;
+	ioInfo->wsaBuf.buf = ioInfo->buffer;
+	ioInfo->serverMode = READ; // GetQueuedCompletionStatus 이후 분기가 Recv로 갈수 있게
+	ioInfo->recvByte = 0;
+	ioInfo->totByte = 0;
+
+	// 계속 Recv
+	WSARecv(sock, &(ioInfo->wsaBuf), 1, &recvBytes, &flags,
+			&(ioInfo->overlapped),
+			NULL);
+}
+
 // fgets와 \n제거 공통함수 버퍼 오버플로우방지
 void Gets(char *message, int size) {
 	fgets(message, size, stdin);
@@ -97,9 +127,10 @@ unsigned WINAPI SendMsgThread(void *arg) {
 						break;
 					}
 				}
-
-				strncpy(packet->message2, password1, NAME_SIZE); // 비밀번호
-				strncpy(packet->message3, nickname, NAME_SIZE); // 닉네임
+				strcat(msg, "\\");
+				strcat(msg, password1);  // 비밀번호
+				strcat(msg, "\\");
+				strcat(msg, nickname); // 닉네임
 				packet->direction = USER_MAKE;
 				packet->clientStatus = STATUS_LOGOUT;
 
@@ -112,7 +143,8 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				cout << "비밀번호를 입력해 주세요" << endl;
 				Gets(password, NAME_SIZE);
 
-				strncpy(packet->message2, password, NAME_SIZE);
+				strcat(msg, "\\");
+				strcat(msg, password);  // 비밀번호
 
 				packet->direction = USER_ENTER;
 				packet->clientStatus = STATUS_LOGOUT;
@@ -142,12 +174,15 @@ unsigned WINAPI SendMsgThread(void *arg) {
 			} else if (strcmp(msg, "5") == 0) { // 귓속말
 
 				char toName[NAME_SIZE];
+				char Msg[BUF_SIZE];
 				cout << "귓속말 대상을 입력해 주세요" << endl;
 				Gets(toName, NAME_SIZE);
-
+				strncpy(msg, toName, NAME_SIZE);
 				cout << "전달할 말을 입력해 주세요" << endl;
-				Gets(msg, BUF_SIZE);
-				strncpy(packet->message2, toName, NAME_SIZE);
+
+				Gets(Msg, BUF_SIZE);
+				strcat(msg, "\\");
+				strcat(msg, Msg);  // 대상
 				packet->direction = WHISPER;
 			} else if (strcmp(msg, "7") == 0) { // 콘솔지우기
 				system("cls");
@@ -165,10 +200,25 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				continue;
 			}
 		}
-		strncpy(packet->message, msg, BUF_SIZE);
-		packet->clientStatus = clientStatus;
-		dataBuf.wsaBuf.buf = (char*) packet;
-		dataBuf.wsaBuf.len = sizeof(PACKET_DATA);
+
+		if (strcmp(msg, "") == 0) { // 입력안하면 Send안함
+			continue;
+		}
+		int len = strlen(msg) + 1;
+		char *p;
+		p = new char[len + (3 * sizeof(int))];
+		memcpy(p, &len, 4); // dataSize;
+		memcpy(((char*) p) + 4, &clientStatus, 4); // status;
+		memcpy(((char*) p) + 8, &packet->direction, 4); // direction;
+
+		packet->message = new char[len];
+
+		strncpy(packet->message, msg, len - 1);
+		packet->message[strlen(msg)] = '\0';
+		memcpy(((char*) p) + 12, msg, len); // status;
+
+		dataBuf.wsaBuf.buf = (char*) p;
+		dataBuf.wsaBuf.len = len + (3 * sizeof(int));
 		dataBuf.serverMode = WRITE;
 
 		WSASend(clientSock, &(dataBuf.wsaBuf), 1, NULL, 0, &overlapped, NULL);
@@ -176,25 +226,10 @@ unsigned WINAPI SendMsgThread(void *arg) {
 	return 0;
 }
 
-// Recv 공통함수
-void Recv(SOCKET sock, DWORD recvBytes, DWORD flags) {
-	LPPER_IO_DATA ioInfo = new PER_IO_DATA;
-	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-	ioInfo->wsaBuf.len = sizeof(PACKET_DATA);
-	ioInfo->wsaBuf.buf = ioInfo->buffer;
-	ioInfo->serverMode = READ; // GetQueuedCompletionStatus 이후 분기가 Recv로 갈수 있게
-
-	// 계속 Recv
-	WSARecv(sock, &(ioInfo->wsaBuf), 1, &recvBytes, &flags,
-			&(ioInfo->overlapped),
-			NULL);
-}
-
 // 수신을 담당할 스레드
 unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 
 	SOCKET sock;
-	char nameMsg[BUF_SIZE];
 	DWORD bytesTrans;
 	LPPER_IO_DATA ioInfo;
 
@@ -202,32 +237,54 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &sock,
 				(LPOVERLAPPED*) &ioInfo, INFINITE);
 
-		P_PACKET_DATA packet = new PACKET_DATA;
-		memcpy(packet, ioInfo->buffer, sizeof(PACKET_DATA));
-		// Client의 상태 정보 갱신 필수
-		// 서버에서 준것으로 갱신
-		if (packet->clientStatus == STATUS_LOGOUT
-				|| packet->clientStatus == STATUS_WAITING
-				|| packet->clientStatus == STATUS_CHATTIG) {
-			if (clientStatus != packet->clientStatus) { // 상태 변경시 콘솔 clear
-				system("cls");
+		// IO 완료후 동작 부분
+		if (READ == ioInfo->serverMode) {
+			memcpy(&(ioInfo->bodySize), ioInfo->buffer, 4);
+			ioInfo->recvBuffer = new char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+			memcpy(((char*) ioInfo->recvBuffer), ioInfo->buffer, bytesTrans);
+			ioInfo->recvByte = 0;
+			ioInfo->totByte = ioInfo->bodySize + 12;
+		} else if (READ_MORE == ioInfo->serverMode) {
+
+			if (ioInfo->recvByte > 12 && ioInfo->recvBuffer != NULL) {
+				memcpy(((char*) ioInfo->recvBuffer) + ioInfo->recvByte,
+						ioInfo->buffer, bytesTrans);
 			}
-			clientStatus = packet->clientStatus; // clear이후 client상태변경 해준다
-			strncpy(nameMsg, packet->message, BUF_SIZE);
-			cout << nameMsg << endl;
-		} else if (packet->clientStatus == STATUS_WHISPER) { // 귓속말 상태일때는 클라이언트 상태변화 없음
-			strncpy(nameMsg, packet->message, BUF_SIZE);
-			cout << nameMsg << endl;
+		}
+		if (READ_MORE == ioInfo->serverMode || READ == ioInfo->serverMode) {
+			ioInfo->recvByte += bytesTrans;
+			if (ioInfo->recvByte < ioInfo->totByte) { // 받은 패킷 부족 -> 더받아야함
+				DWORD recvBytes = 0;
+				DWORD flags = 0;
+				RecvMore(sock, recvBytes, flags, ioInfo); // 패킷 더받기
+			} else {
+				memcpy(&(ioInfo->serverMode), ((char*) ioInfo->recvBuffer) + 4,
+						4);
+				char *msg;
+				msg = new char[ioInfo->bodySize];
+
+				memcpy(msg, ((char*) ioInfo->recvBuffer) + 12,
+						ioInfo->bodySize);
+				// Client의 상태 정보 갱신 필수
+				// 서버에서 준것으로 갱신
+				if (ioInfo->serverMode == STATUS_LOGOUT
+						|| ioInfo->serverMode == STATUS_WAITING
+						|| ioInfo->serverMode == STATUS_CHATTIG) {
+					if (clientStatus != ioInfo->serverMode) { // 상태 변경시 콘솔 clear
+						system("cls");
+					}
+					clientStatus = ioInfo->serverMode; // clear이후 client상태변경 해준다
+					cout << msg << endl;
+				} else if (ioInfo->serverMode == STATUS_WHISPER) { // 귓속말 상태일때는 클라이언트 상태변화 없음
+					cout << msg << endl;
+				}
+
+				DWORD recvBytes = 0;
+				DWORD flags = 0;
+				Recv(sock, recvBytes, flags);
+			}
 		}
 
-		if (bytesTrans == 0) {
-			return -1;
-		}
-
-		DWORD recvBytes = 0;
-		DWORD flags = 0;
-
-		Recv(sock, recvBytes, flags);
 	}
 	return 0;
 }
@@ -257,6 +314,7 @@ int main(int argc, char* argv[0]) {
 		cout << "포트번호를 입력해 주세요 :";
 		string port;
 		cin >> port;
+
 		servAddr.sin_port = htons(atoi(port.c_str()));
 
 		if (connect(hSocket, (SOCKADDR*) &servAddr,
@@ -286,6 +344,7 @@ int main(int argc, char* argv[0]) {
 			(void*) &hSocket, 0,
 			NULL);
 
+	Recv(hSocket, 0, 0);
 	WaitForSingleObject(sendThread, INFINITE);
 	WaitForSingleObject(recvThread, INFINITE);
 	closesocket(hSocket);
