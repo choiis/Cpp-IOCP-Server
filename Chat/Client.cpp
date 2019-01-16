@@ -11,6 +11,7 @@
 #include <string.h>
 #include <winsock2.h>
 #include <process.h>
+#include <regex>
 #include "common.h"
 
 // 현재 클라이언트 상태 => 대기실 => 추후 로그인 이전으로 바뀔것
@@ -22,6 +23,17 @@ typedef struct { // socket info
 	SOCKET hClntSock;
 	SOCKADDR_IN clntAdr;
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
+
+// 영문+숫자 문자열 판별
+bool IsAlphaNumber(char * msg) {
+	regex alpha("[a-z|A-Z|0-9]+");
+	string str = string(msg);
+	if (regex_match(str, alpha)) {
+		return true;
+	} else {
+		return false;
+	}
+}
 
 // Recv 계속 공통함수
 void RecvMore(SOCKET sock, DWORD recvBytes, DWORD flags, LPPER_IO_DATA ioInfo) {
@@ -62,6 +74,28 @@ void Gets(char *message, int size) {
 	}
 }
 
+// WSASend를 call
+void SendMsg(SOCKET clientSock, PER_IO_DATA &ioInfo, const char* msg, int status,
+		int direction) {
+
+	WSAOVERLAPPED overlapped;
+	memset(&overlapped, 0, sizeof(OVERLAPPED));
+
+	int len = strlen(msg) + 1;
+	char *packet;
+	packet = new char[len + (3 * sizeof(int))];
+	memcpy(packet, &len, 4); // dataSize;
+	memcpy(((char*) packet) + 4, &clientStatus, 4); // status;
+	memcpy(((char*) packet) + 8, &direction, 4); // direction;
+	memcpy(((char*) packet) + 12, msg, len); // status;
+
+	ioInfo.wsaBuf.buf = (char*) packet;
+	ioInfo.wsaBuf.len = len + (3 * sizeof(int));
+	ioInfo.serverMode = WRITE;
+
+	WSASend(clientSock, &(ioInfo.wsaBuf), 1, NULL, 0, &overlapped, NULL);
+}
+
 // 송신을 담당할 스레드
 unsigned WINAPI SendMsgThread(void *arg) {
 	// 넘어온 clientSocket을 받아줌
@@ -72,20 +106,19 @@ unsigned WINAPI SendMsgThread(void *arg) {
 		Gets(msg, BUF_SIZE);
 
 		PER_IO_DATA dataBuf;
-		WSAOVERLAPPED overlapped;
 
-		memset(&overlapped, 0, sizeof(OVERLAPPED));
+		int direction;
+		int status;
 
-		P_PACKET_DATA packet;
-		packet = new PACKET_DATA;
 		if (clientStatus == STATUS_LOGOUT) { // 로그인 이전
 			if (strcmp(msg, "1") == 0) {	// 계정 만들 때
 
 				while (true) {
-					cout << "계정을 입력해 주세요" << endl;
+					cout << "계정을 입력해 주세요 (영문숫자10자리)" << endl;
 					Gets(msg, BUF_SIZE);
 
-					if (strcmp(msg, "") != 0) {
+					if (strcmp(msg, "") != 0 && strlen(msg) <= 10
+							&& IsAlphaNumber(msg)) {
 						break;
 					}
 				}
@@ -95,11 +128,12 @@ unsigned WINAPI SendMsgThread(void *arg) {
 
 				char nickname[NAME_SIZE];
 				while (true) {
-					cout << "비밀번호를 입력해 주세요" << endl;
+					cout << "비밀번호를 입력해 주세요 (영문숫자4자리이상 10자리이하)" << endl;
 					Gets(password1, NAME_SIZE);
 					if (strcmp(password1, "") == 0) {
 						continue;
-					} else {
+					} else if (strlen(password1) >= 4 && strlen(password1) <= 10
+							&& IsAlphaNumber(password1)) {
 						break;
 					}
 				}
@@ -120,10 +154,10 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				}
 
 				while (true) {
-					cout << "닉네임을 입력해 주세요" << endl;
+					cout << "닉네임을 입력해 주세요 (20바이트 이하)" << endl;
 					Gets(nickname, NAME_SIZE);
 
-					if (strcmp(nickname, "") != 0) {
+					if (strcmp(nickname, "") != 0 && strlen(nickname) <= 20) {
 						break;
 					}
 				}
@@ -131,8 +165,8 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				strcat(msg, password1);  // 비밀번호
 				strcat(msg, "\\");
 				strcat(msg, nickname); // 닉네임
-				packet->direction = USER_MAKE;
-				packet->clientStatus = STATUS_LOGOUT;
+				direction = USER_MAKE;
+				status = STATUS_LOGOUT;
 
 			} else if (strcmp(msg, "2") == 0) { // 로그인 시도
 				cout << "계정을 입력해 주세요" << endl;
@@ -146,31 +180,32 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				strcat(msg, "\\");
 				strcat(msg, password);  // 비밀번호
 
-				packet->direction = USER_ENTER;
-				packet->clientStatus = STATUS_LOGOUT;
+				direction = USER_ENTER;
+				status = STATUS_LOGOUT;
 			} else if (strcmp(msg, "3") == 0) {
-				packet->direction = USER_LIST;
-				packet->clientStatus = STATUS_LOGOUT;
+				direction = USER_LIST;
+				status = STATUS_LOGOUT;
 			} else if (strcmp(msg, "4") == 0) { // 클라이언트 강제종료
 				exit(1);
 			} else if (strcmp(msg, "5") == 0) { // 콘솔지우기
 				system("cls");
 				cout << loginBeforeMessage << endl;
 				continue;
-			} else if (strcmp(msg, "") == 0) { // 입력안하면 Send안함
-				continue;
 			}
-
 		} else if (clientStatus == STATUS_WAITING) { // 대기실 일 때
-			if (strcmp(msg, "2") == 0) {	// 방 만들 때
+			if (strcmp(msg, "1") == 0) {	// 방 만들 때
+				direction = ROOM_INFO;
+			} else if (strcmp(msg, "2") == 0) {	// 방 만들 때
 				cout << "방 이름을 입력해 주세요" << endl;
 				Gets(msg, BUF_SIZE);
 
-				packet->direction = ROOM_MAKE;
+				direction = ROOM_MAKE;
 			} else if (strcmp(msg, "3") == 0) {	// 방 입장할 때
 				cout << "입장할 방 이름을 입력해 주세요" << endl;
 				Gets(msg, BUF_SIZE);
-				packet->direction = ROOM_ENTER;
+				direction = ROOM_ENTER;
+			} else if (strcmp(msg, "4") == 0) {	// 방 만들 때
+				direction = ROOM_USER_INFO;
 			} else if (strcmp(msg, "5") == 0) { // 귓속말
 
 				char toName[NAME_SIZE];
@@ -183,18 +218,14 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				Gets(Msg, BUF_SIZE);
 				strcat(msg, "\\");
 				strcat(msg, Msg);  // 대상
-				packet->direction = WHISPER;
+				direction = WHISPER;
 			} else if (strcmp(msg, "7") == 0) { // 콘솔지우기
 				system("cls");
 				cout << waitRoomMessage << endl;
 				continue;
-			} else if (strcmp(msg, "") == 0) { // 입력안하면 Send안함
-				continue;
 			}
 		} else if (clientStatus == STATUS_CHATTIG) { // 채팅중일 때
-			if (strcmp(msg, "") == 0) { // 입력안하면 Send안함
-				continue;
-			} else if (strcmp(msg, "\\clear") == 0) { // 콘솔창 clear
+			if (strcmp(msg, "\\clear") == 0) { // 콘솔창 clear
 				system("cls");
 				cout << chatRoomMessage << endl;
 				continue;
@@ -204,24 +235,8 @@ unsigned WINAPI SendMsgThread(void *arg) {
 		if (strcmp(msg, "") == 0) { // 입력안하면 Send안함
 			continue;
 		}
-		int len = strlen(msg) + 1;
-		char *p;
-		p = new char[len + (3 * sizeof(int))];
-		memcpy(p, &len, 4); // dataSize;
-		memcpy(((char*) p) + 4, &clientStatus, 4); // status;
-		memcpy(((char*) p) + 8, &packet->direction, 4); // direction;
 
-		packet->message = new char[len];
-
-		strncpy(packet->message, msg, len - 1);
-		packet->message[strlen(msg)] = '\0';
-		memcpy(((char*) p) + 12, msg, len); // status;
-
-		dataBuf.wsaBuf.buf = (char*) p;
-		dataBuf.wsaBuf.len = len + (3 * sizeof(int));
-		dataBuf.serverMode = WRITE;
-
-		WSASend(clientSock, &(dataBuf.wsaBuf), 1, NULL, 0, &overlapped, NULL);
+		SendMsg(clientSock, dataBuf, msg, status, direction);
 	}
 	return 0;
 }
@@ -265,6 +280,8 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 
 				memcpy(msg, ((char*) ioInfo->recvBuffer) + 12,
 						ioInfo->bodySize);
+
+				delete ioInfo->recvBuffer;
 				// Client의 상태 정보 갱신 필수
 				// 서버에서 준것으로 갱신
 				if (ioInfo->serverMode == STATUS_LOGOUT
@@ -283,6 +300,8 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 				DWORD flags = 0;
 				Recv(sock, recvBytes, flags);
 			}
+
+			delete ioInfo;
 		}
 
 	}

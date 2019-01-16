@@ -36,7 +36,8 @@ using namespace std;
 #define ROOM_ENTER 2
 #define ROOM_OUT 3
 #define WHISPER 4
-
+#define ROOM_INFO 5
+#define ROOM_USER_INFO 6
 // 로그인 중복 방지
 #define NOW_LOGOUT 0
 #define NOW_LOGIN 1
@@ -55,15 +56,16 @@ typedef struct { // buffer info
 	WSABUF wsaBuf;
 	char buffer[SIZE];  // 버퍼에 PACKET_DATA가 들어갈 것이므로 크기 맞춤
 	int serverMode;
-	DWORD recvByte;
-	DWORD totByte;
-	int bodySize;
+	DWORD recvByte; // 지금까지 받은 바이트를 알려줌
+	DWORD totByte; //전체 받을 바이트를 알려줌
+	int bodySize; // 패킷의 body 사이즈
 	char *recvBuffer;
 } PER_IO_DATA, *LPPER_IO_DATA;
+
 char loginBeforeMessage[] = "1.계정생성 2.로그인하기 3.계정 리스트 4.종료 5.콘솔지우기";
 char waitRoomMessage[] =
 		"1.방 정보 보기 2.방 만들기 3.방 입장하기 4.유저 정보 5.귓속말 6.로그아웃 7.콘솔지우기";
 char errorMessage[] = "잘못된 명령어 입니다\n";
-char chatRoomMessage[] = "나가시려면 out을 콘솔지우기는 clear를 입력하세요";
+char chatRoomMessage[] = "나가시려면 \\out을 콘솔지우기는 \\clear를 입력하세요";
 
 #endif /* COMMON_H_ */

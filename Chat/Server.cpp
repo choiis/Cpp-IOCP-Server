@@ -10,7 +10,7 @@
 #include <stdlib.h>
 #include <process.h>
 #include <winsock2.h>
-#include <map>
+#include <unordered_map>
 #include <list>
 #include "common.h"
 
@@ -33,11 +33,11 @@ typedef struct { // buffer info
 } USER_DATA, *P_USER_DATA;
 
 // 계정과 비밀번호를 담을 자료구조
-map<string, USER_DATA> idMap;
+unordered_map<string, USER_DATA> idMap;
 // 서버에 접속한 유저 자료 저장
-map<SOCKET, LPPER_HANDLE_DATA> userMap;
+unordered_map<SOCKET, LPPER_HANDLE_DATA> userMap;
 // 서버의 방 정보 저장
-map<string, list<SOCKET> > roomMap;
+unordered_map<string, list<SOCKET> > roomMap;
 
 // 임계영역에 필요한 객체
 // 커널모드 아니라 유저모드수준 동기화 사용할 예
@@ -45,57 +45,49 @@ map<string, list<SOCKET> > roomMap;
 CRITICAL_SECTION cs;
 
 // 한명에게 메세지 전달
-void SendToOneMsg(char *msg, SOCKET mySock, int status) {
+void SendToOneMsg(const char *msg, SOCKET mySock, int status) {
 
 	LPPER_IO_DATA ioInfo = new PER_IO_DATA;
 
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-	P_PACKET_DATA packet = new PACKET_DATA;
 
 	int len = strlen(msg) + 1;
-	char *p;
-	p = new char[len + (3 * sizeof(int))];
-	memcpy(p, &len, 4); // dataSize;
-	memcpy(((char*) p) + 4, &status, 4); // status;
-	memcpy(((char*) p) + 8, &status, 4); // direction;
+	char *packet;
+	packet = new char[len + (3 * sizeof(int))];
+	memcpy(packet, &len, 4); // dataSize;
+	memcpy(((char*) packet) + 4, &status, 4); // status;
+	memcpy(((char*) packet) + 8, &status, 4); // direction;
+	memcpy(((char*) packet) + 12, msg, len); // status
 
-	packet->message = new char[len];
-	strncpy(packet->message, msg, len - 1);
-	packet->message[strlen(msg)] = '\0';
-	memcpy(((char*) p) + 12, msg, len); // status
-
-	ioInfo->wsaBuf.buf = (char*) p;
+	ioInfo->wsaBuf.buf = (char*) packet;
 	ioInfo->wsaBuf.len = len + (3 * sizeof(int));
 	ioInfo->serverMode = WRITE; // GetQueuedCompletionStatus 이후 분기가 Send로 갈수 있게
-
+	ioInfo->totByte = 1;
+	ioInfo->recvByte = 0;
 	WSASend(mySock, &(ioInfo->wsaBuf), 1, NULL, 0, &(ioInfo->overlapped), NULL);
 }
 
 // 같은 방의 사람들에게 메세지 전달
-void SendToRoomMsg(char *msg, list<SOCKET> &lists, int status) {
+void SendToRoomMsg(const char *msg, const list<SOCKET> &lists, int status) {
 
 	LPPER_IO_DATA ioInfo = new PER_IO_DATA;
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-	P_PACKET_DATA packet = new PACKET_DATA;
 
 	int len = strlen(msg) + 1;
-	char *p;
-	p = new char[len + (3 * sizeof(int))];
-	memcpy(p, &len, 4); // dataSize;
-	memcpy(((char*) p) + 4, &status, 4); // status;
-	memcpy(((char*) p) + 8, &status, 4); // direction;
+	char *packet;
+	packet = new char[len + (3 * sizeof(int))];
+	memcpy(packet, &len, 4); // dataSize;
+	memcpy(((char*) packet) + 4, &status, 4); // status;
+	memcpy(((char*) packet) + 8, &status, 4); // direction;
+	memcpy(((char*) packet) + 12, msg, len); // status
 
-	packet->message = new char[len];
-	strncpy(packet->message, msg, len - 1);
-	packet->message[strlen(msg)] = '\0';
-	memcpy(((char*) p) + 12, msg, len); // status
-
-	ioInfo->wsaBuf.buf = (char*) p;
+	ioInfo->wsaBuf.buf = (char*) packet;
 	ioInfo->wsaBuf.len = len + (3 * sizeof(int));
 	ioInfo->serverMode = WRITE;  // GetQueuedCompletionStatus 이후 분기가 Send로 갈수 있게
-
-	list<SOCKET>::iterator iter;
+	ioInfo->recvByte = 0;
+	list<SOCKET>::const_iterator iter;
 	EnterCriticalSection(&cs);
+	ioInfo->totByte = lists.size();
 	for (iter = lists.begin(); iter != lists.end(); iter++) {
 		WSASend((*iter), &(ioInfo->wsaBuf), 1,
 		NULL, 0, &(ioInfo->overlapped), NULL);
@@ -307,7 +299,7 @@ void StatusLogout(SOCKET sock, int status, int direction, char *message) {
 			if (idMap.size() == 0) {
 				strcat(userList, " 없음");
 			} else {
-				map<string, USER_DATA>::iterator iter;
+				unordered_map<string, USER_DATA>::iterator iter;
 				for (iter = idMap.begin(); iter != idMap.end(); ++iter) {
 					strcat(userList, "\n");
 					strcat(userList, (iter->first).c_str());
@@ -398,9 +390,9 @@ void StatusWait(SOCKET sock, int status, int direction, char *message) {
 			}
 		}
 
-	} else if (strcmp(msg, "1") == 0) { // 방 정보 요청시
+	} else if (direction == ROOM_INFO) { // 방 정보 요청시
 
-		map<string, list<SOCKET> >::iterator iter;
+		unordered_map<string, list<SOCKET> >::iterator iter;
 		char str[BUF_SIZE];
 		if (roomMap.size() == 0) {
 			strncpy(str, "만들어진 방이 없습니다", BUF_SIZE);
@@ -421,10 +413,10 @@ void StatusWait(SOCKET sock, int status, int direction, char *message) {
 		}
 
 		SendToOneMsg(str, sock, STATUS_WAITING);
-	} else if (strcmp(msg, "4") == 0) { // 유저 정보 요청시
+	} else if (direction == ROOM_USER_INFO) { // 유저 정보 요청시
 		char str[BUF_SIZE];
 
-		map<SOCKET, LPPER_HANDLE_DATA>::iterator iter;
+		unordered_map<SOCKET, LPPER_HANDLE_DATA>::iterator iter;
 		strncpy(str, "유저 정보 리스트", BUF_SIZE);
 		// 유저 정보를 문자열로 만든다
 		EnterCriticalSection(&cs);
@@ -454,7 +446,7 @@ void StatusWait(SOCKET sock, int status, int direction, char *message) {
 		strncpy(name, sArr[0], NAME_SIZE);
 		strncpy(msg, sArr[1], NAME_SIZE);
 
-		map<SOCKET, LPPER_HANDLE_DATA>::iterator iter;
+		unordered_map<SOCKET, LPPER_HANDLE_DATA>::iterator iter;
 		char sendMsg[BUF_SIZE];
 
 		if (strcmp(name, userMap.find(sock)->second->userName) == 0) { // 본인에게 쪽지
@@ -588,7 +580,8 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
 			// 콘솔 강제종료 처리
 			ClientExit(sock);
-
+			// 메모리 해제
+			delete ioInfo;
 		} else if (READ == ioInfo->serverMode
 				|| READ_MORE == ioInfo->serverMode) { // Recv 끝난경우
 
@@ -625,6 +618,10 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 				char *msg = new char[ioInfo->bodySize];
 				memcpy(msg, ((char*) ioInfo->recvBuffer) + 12,
 						ioInfo->bodySize);
+
+				cout << "msg :" << msg << endl;
+				cout << "status :" << status << endl;
+				cout << "direction :" << direction << endl;
 				if (userMap.find(sock) == userMap.end()) { // 세션값 없음 => 로그인 이전 분기
 						// 로그인 이전 로직 처리
 					StatusLogout(sock, status, direction, msg);
@@ -646,10 +643,16 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 					// Recv는 계속한다
 					Recv(sock, recvBytes, flags);
 				}
+				// 메모리 해제
+				delete ioInfo;
 			}
-
 		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
 			cout << "message send" << endl;
+			ioInfo->recvByte++;
+			if (ioInfo->totByte == ioInfo->recvByte) {
+				cout << "ioInfo 해제" << endl;
+				delete ioInfo;
+			}
 		}
 	}
 	return 0;
