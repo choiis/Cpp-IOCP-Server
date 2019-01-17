@@ -17,6 +17,8 @@
 // 현재 클라이언트 상태 => 대기실 => 추후 로그인 이전으로 바뀔것
 int clientStatus;
 
+MPool mp(100);
+
 using namespace std;
 
 typedef struct { // socket info
@@ -25,9 +27,8 @@ typedef struct { // socket info
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
 
 // 영문+숫자 문자열 판별
-bool IsAlphaNumber(char * msg) {
+bool IsAlphaNumber(string str) {
 	regex alpha("[a-z|A-Z|0-9]+");
-	string str = string(msg);
 	if (regex_match(str, alpha)) {
 		return true;
 	} else {
@@ -36,8 +37,9 @@ bool IsAlphaNumber(char * msg) {
 }
 
 // Recv 계속 공통함수
-void RecvMore(SOCKET sock, DWORD recvBytes, DWORD flags, LPPER_IO_DATA ioInfo) {
-
+void RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo) {
+	DWORD recvBytes = 0;
+	DWORD flags = 0;
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 	ioInfo->wsaBuf.len = SIZE;
 	memset(ioInfo->buffer, 0, SIZE);
@@ -50,8 +52,12 @@ void RecvMore(SOCKET sock, DWORD recvBytes, DWORD flags, LPPER_IO_DATA ioInfo) {
 			NULL);
 }
 // Recv 공통함수
-void Recv(SOCKET sock, DWORD recvBytes, DWORD flags) {
-	LPPER_IO_DATA ioInfo = new PER_IO_DATA;
+void Recv(SOCKET sock) {
+	DWORD recvBytes = 0;
+	DWORD flags = 0;
+	//LPPER_IO_DATA ioInfo = new PER_IO_DATA;
+	LPPER_IO_DATA ioInfo = mp.malloc();
+
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 	ioInfo->wsaBuf.len = SIZE;
 	ioInfo->wsaBuf.buf = ioInfo->buffer;
@@ -68,6 +74,8 @@ void Recv(SOCKET sock, DWORD recvBytes, DWORD flags) {
 // fgets와 \n제거 공통함수 버퍼 오버플로우방지
 void Gets(char *message, int size) {
 	fgets(message, size, stdin);
+//	string str;
+//	getline(cin, str);
 	char *p;
 	if ((p = strchr(message, '\n')) != NULL) {
 		*p = '\0';
@@ -75,8 +83,8 @@ void Gets(char *message, int size) {
 }
 
 // WSASend를 call
-void SendMsg(SOCKET clientSock, PER_IO_DATA &ioInfo, const char* msg, int status,
-		int direction) {
+void SendMsg(SOCKET clientSock, const char* msg, int status, int direction) {
+	LPPER_IO_DATA ioInfo = new PER_IO_DATA;
 
 	WSAOVERLAPPED overlapped;
 	memset(&overlapped, 0, sizeof(OVERLAPPED));
@@ -89,50 +97,51 @@ void SendMsg(SOCKET clientSock, PER_IO_DATA &ioInfo, const char* msg, int status
 	memcpy(((char*) packet) + 8, &direction, 4); // direction;
 	memcpy(((char*) packet) + 12, msg, len); // status;
 
-	ioInfo.wsaBuf.buf = (char*) packet;
-	ioInfo.wsaBuf.len = len + (3 * sizeof(int));
-	ioInfo.serverMode = WRITE;
+	ioInfo->wsaBuf.buf = (char*) packet;
+	ioInfo->wsaBuf.len = len + (3 * sizeof(int));
+	ioInfo->serverMode = WRITE;
 
-	WSASend(clientSock, &(ioInfo.wsaBuf), 1, NULL, 0, &overlapped, NULL);
+	WSASend(clientSock, &(ioInfo->wsaBuf), 1, NULL, 0, &overlapped,
+	NULL);
+
 }
 
 // 송신을 담당할 스레드
 unsigned WINAPI SendMsgThread(void *arg) {
 	// 넘어온 clientSocket을 받아줌
 	SOCKET clientSock = *((SOCKET*) arg);
-	char msg[BUF_SIZE];
 
 	while (1) {
-		Gets(msg, BUF_SIZE);
+		string msg;
+		getline(cin, msg);
 
-		PER_IO_DATA dataBuf;
-
-		int direction;
+		int direction = -1;
 		int status;
 
 		if (clientStatus == STATUS_LOGOUT) { // 로그인 이전
-			if (strcmp(msg, "1") == 0) {	// 계정 만들 때
+			if (msg.compare("1") == 0) {	// 계정 만들 때
 
 				while (true) {
 					cout << "계정을 입력해 주세요 (영문숫자10자리)" << endl;
-					Gets(msg, BUF_SIZE);
+					getline(cin, msg);
 
-					if (strcmp(msg, "") != 0 && strlen(msg) <= 10
+					if (msg.compare("") != 0 && msg.length() <= 10
 							&& IsAlphaNumber(msg)) {
 						break;
 					}
 				}
 
-				char password1[NAME_SIZE];
-				char password2[NAME_SIZE];
+				string password1;
+				string password2;
 
-				char nickname[NAME_SIZE];
+				string nickname;
 				while (true) {
 					cout << "비밀번호를 입력해 주세요 (영문숫자4자리이상 10자리이하)" << endl;
-					Gets(password1, NAME_SIZE);
-					if (strcmp(password1, "") == 0) {
+					getline(cin, password1);
+					if (password1.compare("") == 0) {
 						continue;
-					} else if (strlen(password1) >= 4 && strlen(password1) <= 10
+					} else if (password1.length() >= 4
+							&& password1.length() <= 10
 							&& IsAlphaNumber(password1)) {
 						break;
 					}
@@ -140,13 +149,13 @@ unsigned WINAPI SendMsgThread(void *arg) {
 
 				while (true) {
 					cout << "비밀번호를 한번더 입력해 주세요" << endl;
-					Gets(password2, NAME_SIZE);
+					getline(cin, password2);
 
-					if (strcmp(password2, "") == 0) {
+					if (password2.compare("") == 0) {
 						continue;
 					}
 
-					if (strcmp(password1, password2) != 0) { // 비밀번호 다름
+					if (password1.compare(password2) != 0) { // 비밀번호 다름
 						cout << "비밀번호 확인 실패!" << endl;
 					} else {
 						break;
@@ -155,90 +164,136 @@ unsigned WINAPI SendMsgThread(void *arg) {
 
 				while (true) {
 					cout << "닉네임을 입력해 주세요 (20바이트 이하)" << endl;
-					Gets(nickname, NAME_SIZE);
+					getline(cin, nickname);
 
-					if (strcmp(nickname, "") != 0 && strlen(nickname) <= 20) {
+					if (nickname.compare("") != 0 && nickname.length() <= 20) {
 						break;
 					}
 				}
-				strcat(msg, "\\");
-				strcat(msg, password1);  // 비밀번호
-				strcat(msg, "\\");
-				strcat(msg, nickname); // 닉네임
+				msg.append("\\");
+				msg.append(password1); // 비밀번호
+				msg.append("\\");
+				msg.append(nickname); // 닉네임
 				direction = USER_MAKE;
 				status = STATUS_LOGOUT;
-
-			} else if (strcmp(msg, "2") == 0) { // 로그인 시도
+			} else if (msg.compare("2") == 0) { // 로그인 시도
 				cout << "계정을 입력해 주세요" << endl;
-				Gets(msg, BUF_SIZE);
+				getline(cin, msg);
 
-				char password[NAME_SIZE];
+				string password;
 
 				cout << "비밀번호를 입력해 주세요" << endl;
-				Gets(password, NAME_SIZE);
+				getline(cin, password);
 
-				strcat(msg, "\\");
-				strcat(msg, password);  // 비밀번호
+				msg.append("\\");
+				msg.append(password); // 비밀번호
 
 				direction = USER_ENTER;
 				status = STATUS_LOGOUT;
-			} else if (strcmp(msg, "3") == 0) {
+			} else if (msg.compare("3") == 0) {
 				direction = USER_LIST;
 				status = STATUS_LOGOUT;
-			} else if (strcmp(msg, "4") == 0) { // 클라이언트 강제종료
+			} else if (msg.compare("4") == 0) { // 클라이언트 강제종료
 				exit(1);
-			} else if (strcmp(msg, "5") == 0) { // 콘솔지우기
+			} else if (msg.compare("5") == 0) { // 콘솔지우기
 				system("cls");
 				cout << loginBeforeMessage << endl;
 				continue;
 			}
 		} else if (clientStatus == STATUS_WAITING) { // 대기실 일 때
-			if (strcmp(msg, "1") == 0) {	// 방 만들 때
+			if (msg.compare("1") == 0) {	// 방 만들 때
 				direction = ROOM_INFO;
-			} else if (strcmp(msg, "2") == 0) {	// 방 만들 때
+			} else if (msg.compare("2") == 0) {	// 방 만들 때
 				cout << "방 이름을 입력해 주세요" << endl;
-				Gets(msg, BUF_SIZE);
+				getline(cin, msg);
 
 				direction = ROOM_MAKE;
-			} else if (strcmp(msg, "3") == 0) {	// 방 입장할 때
+			} else if (msg.compare("3") == 0) {	// 방 입장할 때
 				cout << "입장할 방 이름을 입력해 주세요" << endl;
-				Gets(msg, BUF_SIZE);
+				getline(cin, msg);
 				direction = ROOM_ENTER;
-			} else if (strcmp(msg, "4") == 0) {	// 방 만들 때
+			} else if (msg.compare("4") == 0) {	// 방 만들 때
 				direction = ROOM_USER_INFO;
-			} else if (strcmp(msg, "5") == 0) { // 귓속말
+			} else if (msg.compare("5") == 0) { // 귓속말
 
-				char toName[NAME_SIZE];
-				char Msg[BUF_SIZE];
+				string Msg;
 				cout << "귓속말 대상을 입력해 주세요" << endl;
-				Gets(toName, NAME_SIZE);
-				strncpy(msg, toName, NAME_SIZE);
+				getline(cin, msg);
 				cout << "전달할 말을 입력해 주세요" << endl;
-
-				Gets(Msg, BUF_SIZE);
-				strcat(msg, "\\");
-				strcat(msg, Msg);  // 대상
+				getline(cin, Msg);
+				msg.append("\\");
+				msg.append(Msg); // 대상
 				direction = WHISPER;
-			} else if (strcmp(msg, "7") == 0) { // 콘솔지우기
+			} else if (msg.compare("7") == 0) { // 콘솔지우기
 				system("cls");
 				cout << waitRoomMessage << endl;
 				continue;
 			}
 		} else if (clientStatus == STATUS_CHATTIG) { // 채팅중일 때
-			if (strcmp(msg, "\\clear") == 0) { // 콘솔창 clear
+			if (msg.compare("\\clear") == 0) { // 콘솔창 clear
 				system("cls");
 				cout << chatRoomMessage << endl;
 				continue;
 			}
 		}
 
-		if (strcmp(msg, "") == 0) { // 입력안하면 Send안함
+		if (msg.compare("") == 0) { // 입력안하면 Send안함
 			continue;
 		}
 
-		SendMsg(clientSock, dataBuf, msg, status, direction);
+		SendMsg(clientSock, msg.c_str(), status, direction);
 	}
 	return 0;
+}
+
+// 패킷 데이터 읽기
+void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
+	// IO 완료후 동작 부분
+	if (READ == ioInfo->serverMode) {
+		if (bytesTrans < 4) { // 헤더를 다 못 읽어온 상황
+			memcpy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
+					ioInfo->buffer, bytesTrans);
+		} else {
+			memcpy(&(ioInfo->bodySize), ioInfo->buffer, 4);
+			ioInfo->recvBuffer = new char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+			memcpy(((char*) ioInfo->recvBuffer), ioInfo->buffer, bytesTrans);
+		}
+		ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
+	} else { // 더 읽기
+		if (ioInfo->recvByte >= 4) { // 헤더 다 읽었음
+			memcpy(((char*) ioInfo->recvBuffer) + ioInfo->recvByte,
+					ioInfo->buffer, bytesTrans);
+			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
+		} else { // 헤더를 다 못읽었음 경우
+			int recv = min(4 - ioInfo->recvByte, bytesTrans);
+			memcpy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
+					ioInfo->buffer, recv); // 헤더부터 채운다
+			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
+			if (ioInfo->recvByte >= 4) {
+				ioInfo->recvBuffer = new char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+				memcpy(((char*) ioInfo->recvBuffer) + 4,
+						((char*) ioInfo->buffer) + recv, bytesTrans - recv); // 이제 헤더는 필요없음 => 이때는 뒤의 데이터만 읽자
+			}
+		}
+	}
+
+	if (ioInfo->totByte == 0 && ioInfo->recvByte >= 4) { // 헤더를 다 읽어야 토탈 바이트 수를 알 수 있다
+		ioInfo->totByte = ioInfo->bodySize + 12;
+	}
+}
+
+// 클라이언트에게 받은 데이터 복사후 구조체 해제
+char* DataCopy(LPPER_IO_DATA ioInfo, int *status) {
+	memcpy(status, ((char*) ioInfo->recvBuffer) + 4, 4); // Status
+	char* msg = new char[ioInfo->bodySize];	// Msg
+	memcpy(msg, ((char*) ioInfo->recvBuffer) + 12, ioInfo->bodySize);
+	// 다 복사 받았으니 할당 해제
+	delete ioInfo->recvBuffer;
+	// 메모리 해제
+	// delete ioInfo;
+	mp.free(ioInfo);
+
+	return msg;
 }
 
 // 수신을 담당할 스레드
@@ -252,56 +307,34 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &sock,
 				(LPOVERLAPPED*) &ioInfo, INFINITE);
 
-		// IO 완료후 동작 부분
-		if (READ == ioInfo->serverMode) {
-			memcpy(&(ioInfo->bodySize), ioInfo->buffer, 4);
-			ioInfo->recvBuffer = new char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
-			memcpy(((char*) ioInfo->recvBuffer), ioInfo->buffer, bytesTrans);
-			ioInfo->recvByte = 0;
-			ioInfo->totByte = ioInfo->bodySize + 12;
-		} else if (READ_MORE == ioInfo->serverMode) {
-
-			if (ioInfo->recvByte > 12 && ioInfo->recvBuffer != NULL) {
-				memcpy(((char*) ioInfo->recvBuffer) + ioInfo->recvByte,
-						ioInfo->buffer, bytesTrans);
-			}
-		}
 		if (READ_MORE == ioInfo->serverMode || READ == ioInfo->serverMode) {
-			ioInfo->recvByte += bytesTrans;
-			if (ioInfo->recvByte < ioInfo->totByte) { // 받은 패킷 부족 -> 더받아야함
-				DWORD recvBytes = 0;
-				DWORD flags = 0;
-				RecvMore(sock, recvBytes, flags, ioInfo); // 패킷 더받기
+
+			// 데이터 읽기 과정
+			PacketReading(ioInfo, bytesTrans);
+
+			if ((ioInfo->recvByte < ioInfo->totByte)
+					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
+
+				RecvMore(sock, ioInfo); // 패킷 더받기
 			} else {
-				memcpy(&(ioInfo->serverMode), ((char*) ioInfo->recvBuffer) + 4,
-						4);
-				char *msg;
-				msg = new char[ioInfo->bodySize];
+				int status;
+				char *msg = DataCopy(ioInfo, &status);
 
-				memcpy(msg, ((char*) ioInfo->recvBuffer) + 12,
-						ioInfo->bodySize);
-
-				delete ioInfo->recvBuffer;
 				// Client의 상태 정보 갱신 필수
 				// 서버에서 준것으로 갱신
-				if (ioInfo->serverMode == STATUS_LOGOUT
-						|| ioInfo->serverMode == STATUS_WAITING
-						|| ioInfo->serverMode == STATUS_CHATTIG) {
-					if (clientStatus != ioInfo->serverMode) { // 상태 변경시 콘솔 clear
+				if (status == STATUS_LOGOUT || status == STATUS_WAITING
+						|| status == STATUS_CHATTIG) {
+					if (clientStatus != status) { // 상태 변경시 콘솔 clear
 						system("cls");
 					}
-					clientStatus = ioInfo->serverMode; // clear이후 client상태변경 해준다
+					clientStatus = status; // clear이후 client상태변경 해준다
 					cout << msg << endl;
-				} else if (ioInfo->serverMode == STATUS_WHISPER) { // 귓속말 상태일때는 클라이언트 상태변화 없음
+				} else if (status == STATUS_WHISPER) { // 귓속말 상태일때는 클라이언트 상태변화 없음
 					cout << msg << endl;
 				}
 
-				DWORD recvBytes = 0;
-				DWORD flags = 0;
-				Recv(sock, recvBytes, flags);
+				Recv(sock);
 			}
-
-			delete ioInfo;
 		}
 
 	}
@@ -363,7 +396,7 @@ int main(int argc, char* argv[0]) {
 			(void*) &hSocket, 0,
 			NULL);
 
-	Recv(hSocket, 0, 0);
+	Recv(hSocket);
 	WaitForSingleObject(sendThread, INFINITE);
 	WaitForSingleObject(recvThread, INFINITE);
 	closesocket(hSocket);
