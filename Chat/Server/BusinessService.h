@@ -8,15 +8,12 @@
 #ifndef BUSINESSSERVICE_H_
 #define BUSINESSSERVICE_H_
 
-#include <iostream>
-#include <stdio.h>
-#include <process.h>
 #include <winsock2.h>
 #include <unordered_map>
 #include <list>
-#include "common.h"
 #include "IocpService.h"
-
+#include "MPool.h"
+#include "common.h"
 // 서버에 접속한 유저 정보
 // client 소켓에 대응하는 세션정보
 typedef struct { // socket info
@@ -46,9 +43,13 @@ private:
 	// 임계영역에 필요한 객체
 	// 커널모드 아니라 유저모드수준 동기화 사용할 예
 	// 한 프로세스내의 동기화 이므로 크리티컬섹션 사용
-	CRITICAL_SECTION cs;
 
-	MPool *mp;
+	// idMap 동기화
+	CRITICAL_SECTION idCs;
+	// userMap 동기화
+	CRITICAL_SECTION userCs;
+	// roomMap 동기화
+	CRITICAL_SECTION roomCs;
 
 	IocpService::IocpService *iocpService;
 public:
@@ -58,30 +59,22 @@ public:
 	virtual ~BusinessService();
 	// 초기 로그인
 	// 세션정보 추가
-	void InitUser(char *id, SOCKET sock);
+	void InitUser(const char *id, SOCKET sock);
 	// 접속 강제종료 로직
 	void ClientExit(SOCKET sock);
 	// 로그인 이전 로직처리
 	// 세션값 없을 때 로직
-	void StatusLogout(SOCKET &sock, int &status, int &direction, char *message);
+	void StatusLogout(SOCKET sock, int status, int direction, char *message);
 	// 대기실에서의 로직 처리
 	// 세션값 있음
-	void StatusWait(SOCKET &sock, int &status, int &direction, char *message);
+	void StatusWait(SOCKET sock, int status, int direction, char *message);
 	// 채팅방에서의 로직 처리
 	// 세션값 있음
-	void StatusChat(SOCKET &sock, int &status, int &direction, char *message);
+	void StatusChat(SOCKET sock, int status, int direction, char *message);
 	// 클라이언트에게 받은 데이터 복사후 구조체 해제
 	char* DataCopy(LPPER_IO_DATA ioInfo, int *status, int *direction);
-	// Recv 계속 공통함수
-	void RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo);
-	// Recv 공통함수
-	void Recv(SOCKET sock);
 	// 패킷 데이터 읽기
 	void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans);
-	// 메모리풀 malloc
-	LPPER_IO_DATA malloc();
-	// 메모리풀 free
-	void free(LPPER_IO_DATA freePoint);
 
 	const unordered_map<string, USER_DATA>& getIdMap() const {
 		return idMap;

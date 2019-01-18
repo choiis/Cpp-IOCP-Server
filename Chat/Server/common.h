@@ -9,7 +9,7 @@
 #define COMMON_H_
 
 using namespace std;
-#define SIZE 256
+#define SIZE 2
 #define BUF_SIZE 512
 #define NAME_SIZE 20
 
@@ -66,52 +66,5 @@ typedef struct { // buffer info
 	int bodySize; // 패킷의 body 사이즈
 	char *recvBuffer;
 } PER_IO_DATA, *LPPER_IO_DATA;
-
-// 메모리 풀
-class MPool {
-private:
-	char* data;
-	bool* arr;
-	DWORD cnt;
-	DWORD idx;
-public:
-	MPool(DWORD size) {
-		data = new char[size * sizeof(PER_IO_DATA)]; // size 곱하기 블록수 만큼 할당
-		arr = new bool[size]; // idx번째 메모리 풀의 할당 여부를 가진다
-		cnt = size;
-		idx = 0;
-		memset(arr, 0, size);
-	}
-
-	~MPool() {
-		delete data;
-		delete arr;
-	}
-
-	LPPER_IO_DATA malloc() {
-		// 할당이 안된 저장소를 찾는다
-		while (arr[idx]) {
-			idx++;
-			if (idx == cnt) {
-				idx = 0;
-			}
-		}
-
-		arr[idx] = true;
-		idx++;
-		if (idx == cnt) { // 인덱스가 마지막 번째일때
-			idx = 0;
-			return (LPPER_IO_DATA) (data + ((cnt - 1) * (sizeof(PER_IO_DATA))));
-		} else {
-			return (LPPER_IO_DATA) (data + ((idx - 1) * (sizeof(PER_IO_DATA))));
-		}
-
-	}
-
-	void free(LPPER_IO_DATA freePoint) { // 반환한 포인터의 idx를 원상복구
-		DWORD returnIdx = ((((char*) freePoint) - data) / sizeof(PER_IO_DATA));
-		arr[returnIdx] = false;
-	}
-};
 
 #endif /* COMMON_H_ */

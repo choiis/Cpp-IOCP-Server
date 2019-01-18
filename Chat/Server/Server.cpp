@@ -12,11 +12,11 @@
 #include <winsock2.h>
 
 #include "BusinessService.h"
-
+#include "common.h"
 using namespace std;
 
 // 내부 비지니스 로직 처리 클래스
-Service::BusinessService *handle;
+Service::BusinessService *businessService;
 
 // Server 컴퓨터  CPU 개수만큼 스레드 생성될것
 // 내부 로직은 각 함수별로 처리
@@ -35,62 +35,67 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
 			// 콘솔 강제종료 처리
-			handle->ClientExit(sock);
+			businessService->ClientExit(sock);
 
 			// delete ioInfo; // 전달info 해제
-			handle->free(ioInfo);
+			MPool* mp = MPool::getInstance();
+			mp->free(ioInfo);
 		} else if (READ == ioInfo->serverMode
 				|| READ_MORE == ioInfo->serverMode) { // Recv 끝난경우
 
 				// 데이터 읽기 과정
-			handle->PacketReading(ioInfo, bytesTrans);
+			businessService->PacketReading(ioInfo, bytesTrans);
 			if ((ioInfo->recvByte < ioInfo->totByte)
 					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 
-				LPPER_IO_DATA ioInfo = handle->malloc();
-				handle->BusinessService::getIocpService()->RecvMore(sock,
-						ioInfo); // 패킷 더받기
+				businessService->BusinessService::getIocpService()->RecvMore(
+						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
 			} else { // 다 받은 후 정상 로직
 				int clientStatus;
 				int direction;
-				char *msg = handle->DataCopy(ioInfo, &clientStatus, &direction);
+				char *msg = businessService->DataCopy(ioInfo, &clientStatus,
+						&direction);
+				// DataCopy에서 받은 ioInfo 모두 free
 
-				if (handle->getUserMap().find(sock)
-						== handle->getUserMap().end()) { // 세션값 없음 => 로그인 이전 분기
+				if (businessService->getUserMap().find(sock)
+						== businessService->getUserMap().end()) { // 세션값 없음 => 로그인 이전 분기
 						// 로그인 이전 로직 처리
-					handle->StatusLogout(sock, clientStatus, direction, msg);
+					businessService->StatusLogout(sock, clientStatus, direction,
+							msg);
 					// Recv는 계속한다
-					LPPER_IO_DATA ioInfo = handle->malloc();
-					handle->BusinessService::getIocpService()->Recv(sock,
-							ioInfo); // 패킷 더받기
+
+					businessService->BusinessService::getIocpService()->Recv(
+							sock); // 패킷 더받기
 					// 세션값 없음 => 로그인 이전 분기 끝
 				} else { // 세션값 있을때 => 대기방 또는 채팅방 상태
 
-					int status = handle->getUserMap().find(sock)->second->status;
+					int status =
+							businessService->getUserMap().find(sock)->second->status;
 
 					if (status == STATUS_WAITING) { // 대기실 케이스
 						// 대기실 처리 함수
-						handle->StatusWait(sock, status, direction, msg);
+						businessService->StatusWait(sock, status, direction,
+								msg);
 					} else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
 						// 채팅방 처리 함수
-						handle->StatusChat(sock, status, direction, msg);
+						businessService->StatusChat(sock, status, direction,
+								msg);
 					}
 
 					// Recv는 계속한다
-					LPPER_IO_DATA ioInfo = handle->malloc();
-					handle->BusinessService::getIocpService()->Recv(sock,
-							ioInfo); // 패킷 더받기
+					businessService->BusinessService::getIocpService()->Recv(
+							sock); // 패킷 더받기
 				}
 
 			}
 		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
-			cout << "message send :" << ioInfo->recvByte << endl;
-			ioInfo->recvByte++; // 보냄완료 카운트 +1
-			if (ioInfo->totByte == ioInfo->recvByte) { // 보두에게 다 보낸후 해제
-				delete ioInfo->wsaBuf.buf; // packet위치를 해제
-				// delete ioInfo; // 전달info 해제
-				handle->free(ioInfo);
-			}
+			cout << "message send" << endl;
+
+			delete ioInfo->wsaBuf.buf; // packet위치를 해제
+			// delete ioInfo; // 전달info 해제
+			MPool* mp = MPool::getInstance();
+			mp->free(ioInfo);
+
 		}
 	}
 	return 0;
@@ -154,7 +159,7 @@ int main(int argc, char* argv[]) {
 		exit(1);
 	}
 
-	handle = new Service::BusinessService();
+	businessService = new Service::BusinessService();
 
 	cout << "Server ready listen" << endl;
 	cout << "port number : " << argv[1] << endl;
@@ -171,18 +176,18 @@ int main(int argc, char* argv[]) {
 		// Completion Port 와 accept한 소켓 연결
 		CreateIoCompletionPort((HANDLE) hClientSock, hComPort,
 				(DWORD) hClientSock, 0);
-		LPPER_IO_DATA ioInfo1 = handle->malloc();
-		handle->BusinessService::getIocpService()->Recv(hClientSock, ioInfo1);
+
+		businessService->BusinessService::getIocpService()->Recv(hClientSock);
 
 		// 초기 접속 메세지 Send
 		string str = "접속을 환영합니다!\n";
 		str += loginBeforeMessage;
-		LPPER_IO_DATA ioInfo2 = handle->malloc();
-		handle->BusinessService::getIocpService()->SendToOneMsg(str.c_str(),
-				hClientSock, STATUS_LOGOUT, ioInfo2);
+
+		businessService->BusinessService::getIocpService()->SendToOneMsg(
+				str.c_str(), hClientSock, STATUS_LOGOUT);
 	}
 
-	delete handle;
+	delete businessService;
 
 	return 0;
 }

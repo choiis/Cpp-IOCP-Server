@@ -13,11 +13,9 @@
 #include <process.h>
 #include <regex>
 #include "common.h"
-
+#include "MPool.h"
 // 현재 클라이언트 상태 => 대기실 => 추후 로그인 이전으로 바뀔것
 int clientStatus;
-
-MPool mp(100);
 
 using namespace std;
 
@@ -55,8 +53,8 @@ void RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo) {
 void Recv(SOCKET sock) {
 	DWORD recvBytes = 0;
 	DWORD flags = 0;
-	//LPPER_IO_DATA ioInfo = new PER_IO_DATA;
-	LPPER_IO_DATA ioInfo = mp.malloc();
+	MPool* mp = MPool::getInstance();
+	LPPER_IO_DATA ioInfo = mp->malloc();
 
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 	ioInfo->wsaBuf.len = SIZE;
@@ -69,17 +67,6 @@ void Recv(SOCKET sock) {
 	WSARecv(sock, &(ioInfo->wsaBuf), 1, &recvBytes, &flags,
 			&(ioInfo->overlapped),
 			NULL);
-}
-
-// fgets와 \n제거 공통함수 버퍼 오버플로우방지
-void Gets(char *message, int size) {
-	fgets(message, size, stdin);
-//	string str;
-//	getline(cin, str);
-	char *p;
-	if ((p = strchr(message, '\n')) != NULL) {
-		*p = '\0';
-	}
 }
 
 // WSASend를 call
@@ -290,8 +277,8 @@ char* DataCopy(LPPER_IO_DATA ioInfo, int *status) {
 	// 다 복사 받았으니 할당 해제
 	delete ioInfo->recvBuffer;
 	// 메모리 해제
-	// delete ioInfo;
-	mp.free(ioInfo);
+	MPool* mp = MPool::getInstance();
+	mp->free(ioInfo);
 
 	return msg;
 }
