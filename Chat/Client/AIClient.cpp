@@ -14,6 +14,7 @@
 #include <regex>
 #include "common.h"
 #include "MPool.h"
+
 // 현재 클라이언트 상태 => 대기실 => 추후 로그인 이전으로 바뀔것
 int clientStatus;
 
@@ -23,16 +24,6 @@ typedef struct { // socket info
 	SOCKET hClntSock;
 	SOCKADDR_IN clntAdr;
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
-
-// 영문+숫자 문자열 판별
-bool IsAlphaNumber(string str) {
-	regex alpha("[a-z|A-Z|0-9]+");
-	if (regex_match(str, alpha)) {
-		return true;
-	} else {
-		return false;
-	}
-}
 
 // Recv 계속 공통함수
 void RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo) {
@@ -71,7 +62,8 @@ void Recv(SOCKET sock) {
 
 // WSASend를 call
 void SendMsg(SOCKET clientSock, const char* msg, int status, int direction) {
-	LPPER_IO_DATA ioInfo = new PER_IO_DATA;
+	MPool* mp = MPool::getInstance();
+	LPPER_IO_DATA ioInfo = mp->malloc();
 
 	WSAOVERLAPPED overlapped;
 	memset(&overlapped, 0, sizeof(OVERLAPPED));
@@ -88,10 +80,17 @@ void SendMsg(SOCKET clientSock, const char* msg, int status, int direction) {
 	ioInfo->wsaBuf.len = len + (3 * sizeof(int));
 	ioInfo->serverMode = WRITE;
 
-	WSASend(clientSock, &(ioInfo->wsaBuf), 1, NULL, 0, &overlapped,
-	NULL);
+	if (WSASend(clientSock, &(ioInfo->wsaBuf), 1, NULL, 0, &overlapped,
+	NULL) != SOCKET_ERROR) { // 전송완료
+		mp->free(ioInfo);
+		delete packet;
+	}
 
 }
+
+string alpha1 = "abcdefghijklmnopqrstuvwxyz";
+string alpha2 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+string password = "1234";
 
 // 송신을 담당할 스레드
 unsigned WINAPI SendMsgThread(void *arg) {
@@ -99,136 +98,82 @@ unsigned WINAPI SendMsgThread(void *arg) {
 	SOCKET clientSock = *((SOCKET*) arg);
 
 	while (1) {
-		string msg;
-		getline(cin, msg);
 
 		int direction = -1;
 		int status;
-
+		Sleep(200);
 		if (clientStatus == STATUS_LOGOUT) { // 로그인 이전
-			if (msg.compare("1") == 0) {	// 계정 만들 때
-
-				while (true) {
-					cout << "계정을 입력해 주세요 (영문숫자10자리)" << endl;
-					getline(cin, msg);
-
-					if (msg.compare("") != 0 && msg.length() <= 10
-							&& IsAlphaNumber(msg)) {
-						break;
-					}
-				}
-
-				string password1;
-				string password2;
-
-				string nickname;
-				while (true) {
-					cout << "비밀번호를 입력해 주세요 (영문숫자4자리이상 10자리이하)" << endl;
-					getline(cin, password1);
-					if (password1.compare("") == 0) {
-						continue;
-					} else if (password1.length() >= 4
-							&& password1.length() <= 10
-							&& IsAlphaNumber(password1)) {
-						break;
-					}
-				}
-
-				while (true) {
-					cout << "비밀번호를 한번더 입력해 주세요" << endl;
-					getline(cin, password2);
-
-					if (password2.compare("") == 0) {
-						continue;
-					}
-
-					if (password1.compare(password2) != 0) { // 비밀번호 다름
-						cout << "비밀번호 확인 실패!" << endl;
-					} else {
-						break;
-					}
-				}
-
-				while (true) {
-					cout << "닉네임을 입력해 주세요 (20바이트 이하)" << endl;
-					getline(cin, nickname);
-
-					if (nickname.compare("") != 0 && nickname.length() <= 20) {
-						break;
-					}
-				}
-				msg.append("\\");
-				msg.append(password1); // 비밀번호
-				msg.append("\\");
-				msg.append(nickname); // 닉네임
-				direction = USER_MAKE;
-				status = STATUS_LOGOUT;
-			} else if (msg.compare("2") == 0) { // 로그인 시도
-				cout << "계정을 입력해 주세요" << endl;
-				getline(cin, msg);
-
-				string password;
-
-				cout << "비밀번호를 입력해 주세요" << endl;
-				getline(cin, password);
-
-				msg.append("\\");
-				msg.append(password); // 비밀번호
-
-				direction = USER_ENTER;
-				status = STATUS_LOGOUT;
-			} else if (msg.compare("3") == 0) {
-				direction = USER_LIST;
-				status = STATUS_LOGOUT;
-			} else if (msg.compare("4") == 0) { // 클라이언트 강제종료
-				exit(1);
-			} else if (msg.compare("5") == 0) { // 콘솔지우기
-				system("cls");
-				cout << loginBeforeMessage << endl;
-				continue;
+			int randNum1 = (rand() % 2);
+			int randNum2 = (rand() % 26);
+			string nickName = "";
+			if (randNum1 == 0) {
+				nickName += alpha1.at(randNum2);
+			} else {
+				nickName += alpha2.at(randNum2);
 			}
-		} else if (clientStatus == STATUS_WAITING) { // 대기실 일 때
-			if (msg.compare("1") == 0) {	// 방 정보 요청
-				direction = ROOM_INFO;
-			} else if (msg.compare("2") == 0) {	// 방 만들 때
-				cout << "방 이름을 입력해 주세요" << endl;
-				getline(cin, msg);
+			string msg1 = nickName;
+			msg1.append("\\");
+			msg1.append(password); // 비밀번호
+			msg1.append("\\");
+			msg1.append(nickName); // 닉네임
+			direction = USER_MAKE;
+			status = STATUS_LOGOUT;
+
+			SendMsg(clientSock, msg1.c_str(), status, direction);
+			Sleep(100);
+			string msg2 = nickName;
+			msg2.append("\\");
+			msg2.append(password); // 비밀번호
+			direction = USER_ENTER;
+			status = STATUS_LOGOUT;
+			SendMsg(clientSock, msg2.c_str(), status, direction);
+		} else if (clientStatus == STATUS_WAITING) {
+			int randNum1 = (rand() % 2);
+			int randNum2 = (rand() % 4);
+			string roomName = "";
+			if (randNum1 == 0) {
+				roomName += alpha1.at(randNum2);
+			} else {
+				roomName += alpha2.at(randNum2);
+			}
+
+			int directionNum = (rand() % 10);
+			if ((directionNum % 2) == 0) { // 0 2 4 6 8 방입장
+
+				direction = ROOM_ENTER;
+			} else if ((directionNum % 3) == 0) { // 3 6 9 방만들기
 
 				direction = ROOM_MAKE;
-			} else if (msg.compare("3") == 0) {	// 방 입장할 때
-				cout << "입장할 방 이름을 입력해 주세요" << endl;
-				getline(cin, msg);
-				direction = ROOM_ENTER;
-			} else if (msg.compare("4") == 0) {	// 유저 정보 요청
+			} else if (directionNum == 7) { // 7 방정보
+				direction = ROOM_INFO;
+			} else if (directionNum == 1) { // 1 유저정보
 				direction = ROOM_USER_INFO;
-			} else if (msg.compare("5") == 0) { // 귓속말
+			}
+			SendMsg(clientSock, roomName.c_str(), status, direction);
+		} else if (clientStatus == STATUS_CHATTIG) {
+			int directionNum = (rand() % 20);
+			string msg = "";
+			if (directionNum < 18) {
+				int randNum1 = (rand() % 2);
+				int randNum2 = (rand() % 26);
 
-				string Msg;
-				cout << "귓속말 대상을 입력해 주세요" << endl;
-				getline(cin, msg);
-				cout << "전달할 말을 입력해 주세요" << endl;
-				getline(cin, Msg);
-				msg.append("\\");
-				msg.append(Msg); // 대상
-				direction = WHISPER;
-			} else if (msg.compare("7") == 0) { // 콘솔지우기
+				for (int i = 0; i <= (rand() % 40) + 1; i++) {
+					if (randNum1 == 0) {
+						msg += alpha1.at(randNum2);
+					} else {
+						msg += alpha2.at(randNum2);
+					}
+				}
+
+			} else if (directionNum == 18) { // 20번에 한번 clear
 				system("cls");
-				cout << waitRoomMessage << endl;
-				continue;
+			} else { // 20번에 한번 나감
+				msg = "\\out";
 			}
-		} else if (clientStatus == STATUS_CHATTIG) { // 채팅중일 때
-			if (msg.compare("\\clear") == 0) { // 콘솔창 clear
-				system("cls");
-				cout << chatRoomMessage << endl;
-				continue;
-			}
+
+			SendMsg(clientSock, msg.c_str(), status, direction);
 		}
 
-		if (msg.compare("") == 0) { // 입력안하면 Send안함
-			continue;
-		}
-
-		SendMsg(clientSock, msg.c_str(), status, direction);
 	}
 	return 0;
 }
