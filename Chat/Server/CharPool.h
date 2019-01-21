@@ -5,40 +5,40 @@
  *      Author: choiis1207
  */
 
-#ifndef MPOOL_H_
-#define MPOOL_H_
+#ifndef CHARPOOL_H_
+#define CHARPOOL_H_
 
 #include <iostream>
 #include <winsock2.h>
-#include "common.h"
 
-class MPool {
+#define BLOCK_SIZE 256
+
+class CharPool {
 private:
 	char* data; // 동적할당 대상 주소
 	bool* arr; // block들의 할당 여부
 	DWORD cnt; // 전체 블록수
 	DWORD idx; // 반환 대상 idx
 	CRITICAL_SECTION cs; // 메모리풀 동기화 크리티컬섹션
-	MPool();
-	~MPool();
-	static MPool* instance; // Singleton Instance
+	CharPool();
+	~CharPool();
+	static CharPool* instance; // Singleton Instance
 public:
 	// Singleton Instance 를 반환
-	static MPool* getInstance() {
+	static CharPool* getInstance() {
 		if (instance == nullptr) {
-			cout <<"메모리풀 1000개 할당!"<<endl;
-			instance = new MPool();
+			instance = new CharPool();
 		}
 		return instance;
 	}
 	// 메모리풀 할당
-	LPPER_IO_DATA malloc();
+	char* malloc();
 	// 메모리풀 반환
-	void free(LPPER_IO_DATA freePoint);
+	void free(char* freePoint);
 	// 사이즈
 	DWORD blockSize() {
 		return cnt;
 	}
 };
 
-#endif /* MPOOL_H_ */
+#endif /* CHARPOOL_H_ */

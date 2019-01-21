@@ -14,7 +14,7 @@
 #include <regex>
 #include "common.h"
 #include "MPool.h"
-
+#include "CharPool.h"
 // 현재 클라이언트 상태 => 대기실 => 추후 로그인 이전으로 바뀔것
 int clientStatus;
 
@@ -65,14 +65,13 @@ void SendMsg(SOCKET clientSock, const char* msg, int status, int direction) {
 	MPool* mp = MPool::getInstance();
 	LPPER_IO_DATA ioInfo = mp->malloc();
 
-	WSAOVERLAPPED overlapped;
-	memset(&overlapped, 0, sizeof(OVERLAPPED));
+	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 
 	int len = strlen(msg) + 1;
-	char *packet;
-	packet = new char[len + (3 * sizeof(int))];
+	CharPool* charPool = CharPool::getInstance();
+	char* packet = charPool->malloc(); // char[len + (3 * sizeof(int))];
 	memcpy(packet, &len, 4); // dataSize;
-	memcpy(((char*) packet) + 4, &clientStatus, 4); // status;
+	memcpy(((char*) packet) + 4, &status, 4); // status;
 	memcpy(((char*) packet) + 8, &direction, 4); // direction;
 	memcpy(((char*) packet) + 12, msg, len); // status;
 
@@ -80,11 +79,8 @@ void SendMsg(SOCKET clientSock, const char* msg, int status, int direction) {
 	ioInfo->wsaBuf.len = len + (3 * sizeof(int));
 	ioInfo->serverMode = WRITE;
 
-	if (WSASend(clientSock, &(ioInfo->wsaBuf), 1, NULL, 0, &overlapped,
-	NULL) != SOCKET_ERROR) { // 전송완료
-		mp->free(ioInfo);
-		delete packet;
-	}
+	WSASend(clientSock, &(ioInfo->wsaBuf), 1, NULL, 0, &(ioInfo->overlapped),
+	NULL);
 
 }
 
@@ -100,8 +96,8 @@ unsigned WINAPI SendMsgThread(void *arg) {
 	while (1) {
 
 		int direction = -1;
-		int status;
-		Sleep(200);
+		int status = -1;
+		Sleep(25);
 		if (clientStatus == STATUS_LOGOUT) { // 로그인 이전
 			int randNum1 = (rand() % 2);
 			int randNum2 = (rand() % 26);
@@ -187,7 +183,8 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 					ioInfo->buffer, bytesTrans);
 		} else {
 			memcpy(&(ioInfo->bodySize), ioInfo->buffer, 4);
-			ioInfo->recvBuffer = new char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+			CharPool* charPool = CharPool::getInstance();
+			ioInfo->recvBuffer = charPool->malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
 			memcpy(((char*) ioInfo->recvBuffer), ioInfo->buffer, bytesTrans);
 		}
 		ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
@@ -202,7 +199,8 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 					ioInfo->buffer, recv); // 헤더부터 채운다
 			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 			if (ioInfo->recvByte >= 4) {
-				ioInfo->recvBuffer = new char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+				CharPool* charPool = CharPool::getInstance();
+				ioInfo->recvBuffer = charPool->malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
 				memcpy(((char*) ioInfo->recvBuffer) + 4,
 						((char*) ioInfo->buffer) + recv, bytesTrans - recv); // 이제 헤더는 필요없음 => 이때는 뒤의 데이터만 읽자
 			}
@@ -217,10 +215,11 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 // 클라이언트에게 받은 데이터 복사후 구조체 해제
 char* DataCopy(LPPER_IO_DATA ioInfo, int *status) {
 	memcpy(status, ((char*) ioInfo->recvBuffer) + 4, 4); // Status
-	char* msg = new char[ioInfo->bodySize];	// Msg
+	CharPool* charPool = CharPool::getInstance();
+	char* msg = charPool->malloc(); // char[ioInfo->bodySize];	// Msg
 	memcpy(msg, ((char*) ioInfo->recvBuffer) + 12, ioInfo->bodySize);
 	// 다 복사 받았으니 할당 해제
-	delete ioInfo->recvBuffer;
+	charPool->free(ioInfo->recvBuffer);
 	// 메모리 해제
 	MPool* mp = MPool::getInstance();
 	mp->free(ioInfo);
@@ -264,9 +263,15 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 				} else if (status == STATUS_WHISPER) { // 귓속말 상태일때는 클라이언트 상태변화 없음
 					cout << msg << endl;
 				}
-
+				CharPool* charPool = CharPool::getInstance();
+				charPool->free(msg);
 				Recv(sock);
 			}
+		} else if (WRITE == ioInfo->serverMode) {
+			MPool* mp = MPool::getInstance();
+			CharPool* charPool = CharPool::getInstance();
+			charPool->free(ioInfo->wsaBuf.buf);
+			mp->free(ioInfo);
 		}
 
 	}

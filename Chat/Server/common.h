@@ -9,7 +9,7 @@
 #define COMMON_H_
 
 using namespace std;
-#define SIZE 2
+#define SIZE 256
 #define BUF_SIZE 512
 #define NAME_SIZE 20
 

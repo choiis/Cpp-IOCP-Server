@@ -14,6 +14,7 @@
 #include "IocpService.h"
 #include "MPool.h"
 #include "common.h"
+#include "CharPool.h"
 // 서버에 접속한 유저 정보
 // client 소켓에 대응하는 세션정보
 typedef struct { // socket info
@@ -30,15 +31,21 @@ typedef struct { // buffer info
 	int logMode;
 } USER_DATA, *P_USER_DATA;
 
+// 비동기 통신에 필요한 구조체
+typedef struct { // buffer info
+	list<SOCKET> userList;
+	CRITICAL_SECTION listCs;
+} ROOM_DATA, *P_ROOM_DATA;
+
 namespace Service {
 
 class BusinessService {
 private:
 	unordered_map<string, USER_DATA> idMap;
 	// 서버에 접속한 유저 자료 저장
-	unordered_map<SOCKET, LPPER_HANDLE_DATA> userMap;
+	unordered_map<SOCKET, PER_HANDLE_DATA> userMap;
 	// 서버의 방 정보 저장
-	unordered_map<string, list<SOCKET> > roomMap;
+	unordered_map<string, ROOM_DATA> roomMap;
 
 	// 임계영역에 필요한 객체
 	// 커널모드 아니라 유저모드수준 동기화 사용할 예
@@ -80,11 +87,11 @@ public:
 		return idMap;
 	}
 
-	const unordered_map<string, list<SOCKET> >& getRoomMap() const {
+	const unordered_map<string, ROOM_DATA>& getRoomMap() const {
 		return roomMap;
 	}
 
-	const unordered_map<SOCKET, LPPER_HANDLE_DATA>& getUserMap() const {
+	const unordered_map<SOCKET, PER_HANDLE_DATA>& getUserMap() const {
 		return userMap;
 	}
 

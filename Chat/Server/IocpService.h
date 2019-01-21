@@ -13,6 +13,8 @@
 #include <list>
 #include "common.h"
 #include "MPool.h"
+#include "CharPool.h"
+
 namespace IocpService {
 
 class IocpService {
@@ -23,7 +25,8 @@ public:
 	// 한명에게 메세지 전달
 	void SendToOneMsg(const char *msg, SOCKET mySock, int status);
 	// 같은 방의 사람들에게 메세지 전달
-	void SendToRoomMsg(const char *msg, const list<SOCKET> &lists, int status);
+	void SendToRoomMsg(const char *msg, const list<SOCKET> &lists, int status,
+			CRITICAL_SECTION *listCs);
 	// Recv 계속 공통함수
 	void RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo);
 

@@ -23,8 +23,9 @@ void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, int status) {
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 
 	int len = strlen(msg) + 1;
-	char *packet;
-	packet = new char[len + (3 * sizeof(int))];
+	CharPool* charPool = CharPool::getInstance();
+	char* packet = charPool->malloc(); // char[len + (3 * sizeof(int))];
+
 	memcpy(packet, &len, 4); // dataSize;
 	memcpy(((char*) packet) + 4, &status, 4); // status;
 	memset(((char*) packet) + 8, 0, 4); // direction;
@@ -35,23 +36,26 @@ void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, int status) {
 	ioInfo->serverMode = WRITE; // GetQueuedCompletionStatus 이후 분기가 Send로 갈수 있게
 	ioInfo->totByte = 1;
 	ioInfo->recvByte = 0;
+	// cout << "WSASend " << ioInfo->wsaBuf.len << endl;
 	WSASend(mySock, &(ioInfo->wsaBuf), 1, NULL, 0, &(ioInfo->overlapped),
 	NULL);
+
 }
 // 같은 방의 사람들에게 메세지 전달
 void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
-		int status) {
+		int status, CRITICAL_SECTION *listCs) {
 	MPool* mp = MPool::getInstance();
 
 	list<SOCKET>::const_iterator iter; // 변경 불가능 객체를 가리키는 반복자
 
-	// EnterCriticalSection(&cs);
+	EnterCriticalSection(listCs);
 	for (iter = lists.begin(); iter != lists.end(); iter++) {
 		// ioInfo를 각개 만들어서 보내자
 		LPPER_IO_DATA ioInfo = mp->malloc();
 		int len = strlen(msg) + 1;
-		char *packet;
-		packet = new char[len + (3 * sizeof(int))];
+		CharPool* charPool = CharPool::getInstance();
+		char* packet = charPool->malloc(); // char[len + (3 * sizeof(int))];
+
 		memcpy(packet, &len, 4); // dataSize;
 		memcpy(((char*) packet) + 4, &status, 4); // status;
 		memset(((char*) packet) + 8, 0, 4); // direction;
@@ -61,11 +65,12 @@ void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
 		ioInfo->wsaBuf.len = len + (3 * sizeof(int));
 		ioInfo->serverMode = WRITE; // GetQueuedCompletionStatus 이후 분기가 Send로 갈수 있게
 		ioInfo->recvByte = 0;
-
+		// cout << "WSASend " << ioInfo->wsaBuf.len << endl;
 		WSASend((*iter), &(ioInfo->wsaBuf), 1,
 		NULL, 0, &(ioInfo->overlapped), NULL);
 	}
-	// LeaveCriticalSection(&cs);
+	LeaveCriticalSection(listCs);
+
 }
 // Recv 계속 공통함수
 void IocpService::RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo) {
@@ -105,4 +110,3 @@ void IocpService::Recv(SOCKET sock) {
 
 }
 /* namespace IocpService */
-

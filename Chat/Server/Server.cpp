@@ -13,6 +13,8 @@
 
 #include "BusinessService.h"
 #include "common.h"
+#include "CharPool.h"
+
 using namespace std;
 
 // 내부 비지니스 로직 처리 클래스
@@ -37,7 +39,6 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			// 콘솔 강제종료 처리
 			businessService->ClientExit(sock);
 
-			// delete ioInfo; // 전달info 해제
 			MPool* mp = MPool::getInstance();
 			mp->free(ioInfo);
 		} else if (READ == ioInfo->serverMode
@@ -51,8 +52,8 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 				businessService->BusinessService::getIocpService()->RecvMore(
 						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
 			} else { // 다 받은 후 정상 로직
-				int clientStatus;
-				int direction;
+				int clientStatus = -1;
+				int direction = -1;
 				char *msg = businessService->DataCopy(ioInfo, &clientStatus,
 						&direction);
 				// DataCopy에서 받은 ioInfo 모두 free
@@ -70,7 +71,7 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 				} else { // 세션값 있을때 => 대기방 또는 채팅방 상태
 
 					int status =
-							businessService->getUserMap().find(sock)->second->status;
+							businessService->getUserMap().find(sock)->second.status;
 
 					if (status == STATUS_WAITING) { // 대기실 케이스
 						// 대기실 처리 함수
@@ -89,13 +90,15 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 			}
 		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
-			cout << "message send" << endl;
+			// cout << "message send" << endl;
+			CharPool* charPool = CharPool::getInstance();
+			charPool->free(ioInfo->wsaBuf.buf);
 
-			delete ioInfo->wsaBuf.buf; // packet위치를 해제
-			// delete ioInfo; // 전달info 해제
 			MPool* mp = MPool::getInstance();
 			mp->free(ioInfo);
-
+		} else {
+			MPool* mp = MPool::getInstance();
+			mp->free(ioInfo);
 		}
 	}
 	return 0;
@@ -109,11 +112,6 @@ int main(int argc, char* argv[]) {
 
 	SOCKET hServSock;
 	SOCKADDR_IN servAdr;
-
-	if (argc != 2) {
-		cout << "Usage : " << argv[0] << endl;
-		exit(1);
-	}
 
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
 		cout << "WSAStartup() error!" << endl;
@@ -142,10 +140,14 @@ int main(int argc, char* argv[]) {
 	hServSock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
 	WSA_FLAG_OVERLAPPED);
 
+	string port;
+	cout << "포트번호를 입력해 주세요" << endl;
+	cin >> port;
+
 	memset(&servAdr, 0, sizeof(servAdr));
 	servAdr.sin_family = PF_INET;
 	servAdr.sin_addr.s_addr = htonl(INADDR_ANY); // INADDR_ANY뜻은 어느 IP에서 접속이 와도 요청 수락한다는 뜻
-	servAdr.sin_port = htons(atoi(argv[1]));
+	servAdr.sin_port = htons(atoi(port.c_str()));
 
 	if (bind(hServSock, (SOCKADDR*) &servAdr, sizeof(servAdr)) == SOCKET_ERROR) {
 		cout << "bind() error!" << endl;
@@ -162,7 +164,7 @@ int main(int argc, char* argv[]) {
 	businessService = new Service::BusinessService();
 
 	cout << "Server ready listen" << endl;
-	cout << "port number : " << argv[1] << endl;
+	cout << "port number : " << port << endl;
 
 	while (true) {
 		SOCKET hClientSock;
@@ -171,7 +173,7 @@ int main(int argc, char* argv[]) {
 		cout << "accept wait" << endl;
 		hClientSock = accept(hServSock, (SOCKADDR*) &clntAdr, &addrLen);
 
-		cout << "Connected client IP " << inet_ntoa(clntAdr.sin_addr) << endl;
+		// cout << "Connected client IP " << inet_ntoa(clntAdr.sin_addr) << endl;
 
 		// Completion Port 와 accept한 소켓 연결
 		CreateIoCompletionPort((HANDLE) hClientSock, hComPort,
