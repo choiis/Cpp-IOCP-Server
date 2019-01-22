@@ -18,6 +18,8 @@
 // 현재 클라이언트 상태 => 대기실 => 추후 로그인 이전으로 바뀔것
 int clientStatus;
 
+CRITICAL_SECTION cs;
+
 using namespace std;
 
 typedef struct { // socket info
@@ -78,10 +80,10 @@ void SendMsg(SOCKET clientSock, const char* msg, int status, int direction) {
 	ioInfo->wsaBuf.buf = (char*) packet;
 	ioInfo->wsaBuf.len = len + (3 * sizeof(int));
 	ioInfo->serverMode = WRITE;
+	// cout << "send " << msg << " status " << status << " direction " << direction << endl;
 
 	WSASend(clientSock, &(ioInfo->wsaBuf), 1, NULL, 0, &(ioInfo->overlapped),
 	NULL);
-
 }
 
 string alpha1 = "abcdefghijklmnopqrstuvwxyz";
@@ -97,63 +99,94 @@ unsigned WINAPI SendMsgThread(void *arg) {
 
 		int direction = -1;
 		int status = -1;
-		Sleep(25);
+		Sleep(1);
+		EnterCriticalSection(&cs);
 		if (clientStatus == STATUS_LOGOUT) { // 로그인 이전
-			int randNum1 = (rand() % 2);
-			int randNum2 = (rand() % 26);
-			string nickName = "";
-			if (randNum1 == 0) {
-				nickName += alpha1.at(randNum2);
-			} else {
-				nickName += alpha2.at(randNum2);
-			}
-			string msg1 = nickName;
-			msg1.append("\\");
-			msg1.append(password); // 비밀번호
-			msg1.append("\\");
-			msg1.append(nickName); // 닉네임
-			direction = USER_MAKE;
-			status = STATUS_LOGOUT;
+			LeaveCriticalSection(&cs);
+			int randNum3 = (rand() % 2);
+			if (randNum3 % 2 == 0) {
+				int randNum1 = (rand() % 2);
+				int randNum2 = (rand() % 26);
+				string nickName = "";
+				if (randNum1 == 0) {
+					nickName += alpha1.at(randNum2);
+				} else {
+					nickName += alpha2.at(randNum2);
+				}
+				string msg1 = nickName;
+				msg1.append("\\");
+				msg1.append(password); // 비밀번호
+				msg1.append("\\");
+				msg1.append(nickName); // 닉네임
+				direction = USER_MAKE;
+				status = STATUS_LOGOUT;
 
-			SendMsg(clientSock, msg1.c_str(), status, direction);
-			Sleep(100);
-			string msg2 = nickName;
-			msg2.append("\\");
-			msg2.append(password); // 비밀번호
-			direction = USER_ENTER;
-			status = STATUS_LOGOUT;
-			SendMsg(clientSock, msg2.c_str(), status, direction);
-		} else if (clientStatus == STATUS_WAITING) {
-			int randNum1 = (rand() % 2);
-			int randNum2 = (rand() % 4);
-			string roomName = "";
-			if (randNum1 == 0) {
-				roomName += alpha1.at(randNum2);
+				SendMsg(clientSock, msg1.c_str(), status, direction);
 			} else {
-				roomName += alpha2.at(randNum2);
+				int randNum1 = (rand() % 2);
+				int randNum2 = (rand() % 26);
+				string nickName = "";
+				if (randNum1 == 0) {
+					nickName += alpha1.at(randNum2);
+				} else {
+					nickName += alpha2.at(randNum2);
+				}
+				string msg2 = nickName;
+				msg2.append("\\");
+				msg2.append(password); // 비밀번호
+				direction = USER_ENTER;
+				status = STATUS_LOGOUT;
+				SendMsg(clientSock, msg2.c_str(), status, direction);
 			}
+
+		} else if (clientStatus == STATUS_WAITING) {
+			LeaveCriticalSection(&cs);
 
 			int directionNum = (rand() % 10);
 			if ((directionNum % 2) == 0) { // 0 2 4 6 8 방입장
 
+				int randNum1 = (rand() % 2);
+				int randNum2 = (rand() % 4);
+				string roomName = "";
+				if (randNum1 == 0) {
+					roomName += alpha1.at(randNum2);
+				} else {
+					roomName += alpha2.at(randNum2);
+				}
 				direction = ROOM_ENTER;
+				status = STATUS_WAITING;
+				SendMsg(clientSock, roomName.c_str(), status, direction);
 			} else if ((directionNum % 3) == 0) { // 3 6 9 방만들기
-
+				int randNum1 = (rand() % 2);
+				int randNum2 = (rand() % 4);
+				string roomName = "";
+				if (randNum1 == 0) {
+					roomName += alpha1.at(randNum2);
+				} else {
+					roomName += alpha2.at(randNum2);
+				}
 				direction = ROOM_MAKE;
+				status = STATUS_WAITING;
+				SendMsg(clientSock, roomName.c_str(), status, direction);
 			} else if (directionNum == 7) { // 7 방정보
 				direction = ROOM_INFO;
+				status = STATUS_WAITING;
+				SendMsg(clientSock, "", status, direction);
 			} else if (directionNum == 1) { // 1 유저정보
 				direction = ROOM_USER_INFO;
+				status = STATUS_WAITING;
+				SendMsg(clientSock, "", status, direction);
 			}
-			SendMsg(clientSock, roomName.c_str(), status, direction);
+
 		} else if (clientStatus == STATUS_CHATTIG) {
+			LeaveCriticalSection(&cs);
 			int directionNum = (rand() % 20);
 			string msg = "";
 			if (directionNum < 18) {
 				int randNum1 = (rand() % 2);
-				int randNum2 = (rand() % 26);
 
-				for (int i = 0; i <= (rand() % 40) + 1; i++) {
+				for (int i = 0; i <= (rand() % 60) + 1; i++) {
+					int randNum2 = (rand() % 26);
 					if (randNum1 == 0) {
 						msg += alpha1.at(randNum2);
 					} else {
@@ -166,8 +199,10 @@ unsigned WINAPI SendMsgThread(void *arg) {
 			} else { // 20번에 한번 나감
 				msg = "\\out";
 			}
-
+			status = STATUS_CHATTIG;
 			SendMsg(clientSock, msg.c_str(), status, direction);
+		} else {
+			LeaveCriticalSection(&cs);
 		}
 
 	}
@@ -239,7 +274,6 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 				(LPOVERLAPPED*) &ioInfo, INFINITE);
 
 		if (READ_MORE == ioInfo->serverMode || READ == ioInfo->serverMode) {
-
 			// 데이터 읽기 과정
 			PacketReading(ioInfo, bytesTrans);
 
@@ -255,10 +289,12 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 				// 서버에서 준것으로 갱신
 				if (status == STATUS_LOGOUT || status == STATUS_WAITING
 						|| status == STATUS_CHATTIG) {
+					EnterCriticalSection(&cs);
 					if (clientStatus != status) { // 상태 변경시 콘솔 clear
 						system("cls");
 					}
 					clientStatus = status; // clear이후 client상태변경 해준다
+					LeaveCriticalSection(&cs);
 					cout << msg << endl;
 				} else if (status == STATUS_WHISPER) { // 귓속말 상태일때는 클라이언트 상태변화 없음
 					cout << msg << endl;
@@ -277,7 +313,7 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 	}
 	return 0;
 }
-int main(int argc, char* argv[0]) {
+int main() {
 
 	WSADATA wsaData;
 	SOCKET hSocket;
@@ -298,6 +334,9 @@ int main(int argc, char* argv[0]) {
 	memset(&servAddr, 0, sizeof(servAddr));
 	servAddr.sin_family = PF_INET;
 	servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+	// 임계영역 Object 생성
+	InitializeCriticalSectionAndSpinCount(&cs, 2000);
 	while (1) {
 
 		cout << "포트번호를 입력해 주세요 :";
@@ -336,6 +375,8 @@ int main(int argc, char* argv[0]) {
 	Recv(hSocket);
 	WaitForSingleObject(sendThread, INFINITE);
 	WaitForSingleObject(recvThread, INFINITE);
+	// 임계영역 Object 반환
+	DeleteCriticalSection(&cs);
 	closesocket(hSocket);
 	WSACleanup();
 	return 0;

@@ -11,11 +11,11 @@ namespace Service {
 
 BusinessService::BusinessService() {
 	// 임계영역 Object 생성
-	InitializeCriticalSection(&idCs);
+	InitializeCriticalSectionAndSpinCount(&idCs, 2000);
 
-	InitializeCriticalSection(&userCs);
+	InitializeCriticalSectionAndSpinCount(&userCs, 2000);
 
-	InitializeCriticalSection(&roomCs);
+	InitializeCriticalSectionAndSpinCount(&roomCs, 2000);
 
 	iocpService = new IocpService::IocpService();
 }
@@ -41,7 +41,7 @@ void BusinessService::InitUser(const char *id, SOCKET sock) {
 	strncpy(name, idMap.find(id)->second.nickname, NAME_SIZE);
 
 	PER_HANDLE_DATA userInfo;
-	// cout << "START user : " << name << endl;
+	cout << "START user : " << name << endl;
 	// cout << "sock : " << sock << endl;
 	// 유저의 상태 정보 초기화
 	userInfo.status = STATUS_WAITING;
@@ -53,7 +53,7 @@ void BusinessService::InitUser(const char *id, SOCKET sock) {
 	EnterCriticalSection(&userCs);
 	// 세션정보 insert
 	this->userMap[sock] = userInfo;
-	// cout << "현재 접속 인원 수 : " << userMap.size() << endl;
+	cout << "현재 접속 인원 수 : " << userMap.size() << endl;
 	LeaveCriticalSection(&userCs);
 
 	// id의 key값은 유저 이름이 아니라 아이디!!
@@ -125,7 +125,7 @@ void BusinessService::ClientExit(SOCKET sock) {
 			EnterCriticalSection(&userCs);
 			userMap.erase(sock); // 접속 소켓 정보 삭제
 			LeaveCriticalSection(&userCs);
-			// cout << "현재 접속 인원 수 : " << userMap.size() << endl;
+			cout << "현재 접속 인원 수 : " << userMap.size() << endl;
 		}
 
 	}
@@ -215,28 +215,25 @@ void BusinessService::StatusLogout(SOCKET sock, int status, int direction,
 
 		} else if (direction == USER_LIST) { // 유저들 정보 요청
 			// cout << "USER LIST" << endl;
-			char userList[BUF_SIZE];
-			strncpy(userList, "아이디 정보 리스트", BUF_SIZE);
+			string userList = "아이디 정보 리스트";
 			if (idMap.size() == 0) {
-				strcat(userList, " 없음");
+				userList += " 없음";
 			} else {
-				// 변경 아니므로 Lock 없이
+				unordered_map<string, USER_DATA> idCopyMap = idMap;
+				// 동기화 없이 깊은복사
 				unordered_map<string, USER_DATA>::const_iterator iter;
-				for (iter = idMap.begin(); iter != idMap.end(); ++iter) {
-					strcat(userList, "\n");
-					strcat(userList, (iter->first).c_str());
+				for (iter = idCopyMap.begin(); iter != idCopyMap.end();
+						++iter) {
+					userList += "\n";
+					userList += (iter->first).c_str();
 				}
 			}
-
-			iocpService->SendToOneMsg(userList, sock, STATUS_LOGOUT);
+			iocpService->SendToOneMsg(userList.c_str(), sock, STATUS_LOGOUT);
 		} else { // 그외 명령어 입력
-			char sendMsg[BUF_SIZE];
-
-			strncpy(sendMsg, errorMessage, BUF_SIZE);
-			strcat(sendMsg, loginBeforeMessage);
+			string sendMsg = errorMessage;
+			// sendMsg += waitRoomMessage;
 			// 대기방의 오류이므로 STATUS_WAITING 상태로 전달한다
-
-			iocpService->SendToOneMsg(sendMsg, sock, STATUS_LOGOUT);
+			iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_LOGOUT);
 		}
 	}
 	CharPool* charPool = CharPool::getInstance();
@@ -336,18 +333,21 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 		} else {
 			str += "방 정보 리스트";
 
+			unordered_map<string, ROOM_DATA> roomCopyMap = roomMap;
+			// 동기화 없이 깊은복사
 			unordered_map<string, ROOM_DATA>::const_iterator iter;
 			// 방정보를 문자열로 만든다
-			EnterCriticalSection(&roomCs);
-			for (iter = roomMap.begin(); iter != roomMap.end(); iter++) {
+
+			for (iter = roomCopyMap.begin(); iter != roomCopyMap.end();
+					iter++) {
 
 				str += "\n";
 				str += iter->first.c_str();
 				str += " : ";
-				str += to_string((iter->second).userList.size());
+				//str += to_string((iter->second).userList.size());
 				str += "명";
 			}
-			LeaveCriticalSection(&roomCs);
+
 		}
 
 		iocpService->SendToOneMsg(str.c_str(), sock, STATUS_WAITING);
@@ -355,7 +355,7 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 		string str = "유저 정보 리스트";
 
 		unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap;
-		// 동기화 없이 복사로 해결
+		// 동기화 없이 깊은복사
 		unordered_map<SOCKET, PER_HANDLE_DATA>::iterator iter;
 
 		for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
@@ -395,7 +395,7 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 			bool find = false;
 			unordered_map<SOCKET, PER_HANDLE_DATA>::iterator iter;
 			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap;
-			// 동기화 없이 복사로 해결
+			// 동기화 없이 깊은복사
 
 			for (iter = userCopyMap.begin(); iter != userCopyMap.end();
 					iter++) {
@@ -422,18 +422,19 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 		}
 
 	} else if (msg.compare("6") == 0) { // 로그아웃
-		EnterCriticalSection(&userCs);
 
 		string userId = idMap.find(userMap.find(sock)->second.userId)->first;
-		userMap.erase(sock); // 접속 소켓 정보 삭제
 		idMap.find(userId)->second.logMode = NOW_LOGOUT;
+
+		EnterCriticalSection(&userCs);
+		userMap.erase(sock); // 접속 소켓 정보 삭제
 		LeaveCriticalSection(&userCs);
 		string sendMsg = loginBeforeMessage;
 
 		iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_LOGOUT);
 	} else { // 그외 명령어 입력
 		string sendMsg = errorMessage;
-		sendMsg += waitRoomMessage;
+		// sendMsg += waitRoomMessage;
 		// 대기방의 오류이므로 STATUS_WAITING 상태로 전달한다
 
 		iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_WAITING);
@@ -487,10 +488,12 @@ void BusinessService::StatusChat(SOCKET sock, int status, int direction,
 		(roomMap.find(roomName)->second).userList.remove(sock);
 		LeaveCriticalSection(&roomMap.find(roomName)->second.listCs);
 
+		EnterCriticalSection(&roomCs);
 		if ((roomMap.find(roomName)->second).userList.size() == 0) { // 방인원 0명이면 방 삭제
 			DeleteCriticalSection(&roomMap.find(roomName)->second.listCs);
 			roomMap.erase(roomName);
 		}
+		LeaveCriticalSection(&roomCs);
 
 	} else { // 채팅방에서 채팅중
 
@@ -555,6 +558,7 @@ void BusinessService::PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 			int recv = min(4 - ioInfo->recvByte, bytesTrans);
 			memcpy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
 					ioInfo->buffer, recv); // 헤더부터 채운다
+
 			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 			if (ioInfo->recvByte >= 4) {
 				CharPool* charPool = CharPool::getInstance();

@@ -12,7 +12,7 @@ CharPool::CharPool() {
 	arr = new bool[1000]; // idx번째 메모리 풀의 할당 여부를 가진다
 	cnt = 1000;
 	idx = 0;
-	InitializeCriticalSection(&cs);
+	InitializeCriticalSectionAndSpinCount(&cs, 2000);
 	memset(this->arr, 0, 1000);
 }
 // Singleton Instance
@@ -51,6 +51,7 @@ void CharPool::free(char* freePoint) { // 반환한 포인터의 idx를 원상복구
 
 	DWORD returnIdx = ((((char*) freePoint) - data) / BLOCK_SIZE);
 	EnterCriticalSection(&cs);
+	memset(freePoint, 0, BLOCK_SIZE);
 	idx = returnIdx;
 	// 반환된 idx의 할당여부 No
 	arr[returnIdx] = false;

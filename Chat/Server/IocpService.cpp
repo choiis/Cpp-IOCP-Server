@@ -36,7 +36,7 @@ void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, int status) {
 	ioInfo->serverMode = WRITE; // GetQueuedCompletionStatus 이후 분기가 Send로 갈수 있게
 	ioInfo->totByte = 1;
 	ioInfo->recvByte = 0;
-	// cout << "WSASend " << ioInfo->wsaBuf.len << endl;
+
 	WSASend(mySock, &(ioInfo->wsaBuf), 1, NULL, 0, &(ioInfo->overlapped),
 	NULL);
 
@@ -65,7 +65,7 @@ void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
 		ioInfo->wsaBuf.len = len + (3 * sizeof(int));
 		ioInfo->serverMode = WRITE; // GetQueuedCompletionStatus 이후 분기가 Send로 갈수 있게
 		ioInfo->recvByte = 0;
-		// cout << "WSASend " << ioInfo->wsaBuf.len << endl;
+
 		WSASend((*iter), &(ioInfo->wsaBuf), 1,
 		NULL, 0, &(ioInfo->overlapped), NULL);
 	}

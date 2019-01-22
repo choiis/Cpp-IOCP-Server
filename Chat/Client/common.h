@@ -14,9 +14,9 @@ using namespace std;
 #define NAME_SIZE 20
 
 // CP가 Recv 받을때 READ Send 받을때 WRITE
-#define READ 1
-#define WRITE 2
-#define READ_MORE 3
+#define READ 6
+#define WRITE 7
+#define READ_MORE 8
 
 // 클라이언트 상태 정보 => 서버에서 보관할것
 #define STATUS_INIT 0

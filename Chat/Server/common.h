@@ -14,9 +14,9 @@ using namespace std;
 #define NAME_SIZE 20
 
 // CP가 Recv 받을때 READ Send 받을때 WRITE
-#define READ 1
-#define WRITE 2
-#define READ_MORE 3
+#define READ 6
+#define WRITE 7
+#define READ_MORE 8
 
 // 클라이언트 상태 정보 => 서버에서 보관할것
 #define STATUS_INIT 0
@@ -44,7 +44,7 @@ using namespace std;
 
 #define loginBeforeMessage "1.계정생성 2.로그인하기 3.계정 리스트 4.종료 5.콘솔지우기"
 #define waitRoomMessage	"1.방 정보 보기 2.방 만들기 3.방 입장하기 4.유저 정보 5.귓속말 6.로그아웃 7.콘솔지우기"
-#define errorMessage "잘못된 명령어 입니다\n"
+#define errorMessage "잘못된 명령어 입니다"
 #define chatRoomMessage  "나가시려면 \\out을 콘솔지우기는 \\clear를 입력하세요"
 
 // 실제 통신 패킷 데이터

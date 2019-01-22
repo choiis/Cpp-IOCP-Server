@@ -7,72 +7,22 @@
 //============================================================================
 
 #include <iostream>
-#include <cstdlib>
+#include <stdlib.h>
 #include <winsock2.h>
 #include <string.h>
 #include <time.h>
 #include <queue>
-using namespace std;
+#include <stack>
 
-#define BUF_SIZE 500
+using namespace std;
+#define BLOCK_SIZE 256
+
+#define BUF_SIZE 100
 
 // 비동기 통신에 필요한 구조체
 typedef struct { // buffer info
-	OVERLAPPED overlapped;
-	WSABUF wsaBuf;
 	char buffer[BUF_SIZE];  // 버퍼에 PACKET_DATA가 들어갈 것이므로 크기 맞춤
-	int serverMode;
-	DWORD recvByte; // 지금까지 받은 바이트를 알려줌, 지금까지 보낸 사람
-	DWORD totByte; //전체 받을 바이트를 알려줌 , 총 보낼 사람
-	int bodySize; // 패킷의 body 사이즈
-	char *recvBuffer;
 } PER_IO_DATA, *LPPER_IO_DATA;
-
-class ArrayPool {
-private:
-	char* data;
-	bool* arr;
-	DWORD cnt;
-	DWORD idx;
-public:
-	ArrayPool(DWORD size) {
-		data = new char[size * sizeof(PER_IO_DATA)];
-		arr = new bool[size];
-		cnt = size;
-		idx = 0;
-		memset(arr, 0, size);
-	}
-	~ArrayPool() {
-		cnt = 0;
-		idx = 0;
-		delete data;
-		delete arr;
-	}
-	LPPER_IO_DATA malloc() {
-
-		while (arr[idx]) {
-			idx++;
-			if (idx == cnt) {
-				idx = 0;
-			}
-		}
-
-		arr[idx] = true;
-		idx++;
-		if (idx == cnt) {
-			idx = 0;
-			return (LPPER_IO_DATA) (data + ((cnt - 1) * (sizeof(PER_IO_DATA))));
-		} else {
-			return (LPPER_IO_DATA) (data + ((idx - 1) * (sizeof(PER_IO_DATA))));
-		}
-
-	}
-
-	void free(LPPER_IO_DATA freePoint) {
-		DWORD returnIdx = ((((char*) freePoint) - data) / sizeof(PER_IO_DATA));
-		arr[returnIdx] = false;
-	}
-};
 
 class ListPool {
 private:
@@ -124,7 +74,7 @@ public:
 		}
 	}
 	~QueuePool() {
-		while(!poolQueue.empty()) {
+		while (!poolQueue.empty()) {
 			poolQueue.pop();
 		}
 		delete data;
@@ -141,18 +91,233 @@ public:
 
 };
 
+class StackPool {
+private:
+	char* data;
+	stack<int> st; // 반환예정 idx가 담긴다
+public:
+	StackPool(DWORD blocks) {
+		data = new char[blocks * sizeof(PER_IO_DATA)]; // size 곱하기 블록수 만큼 할당
+		for (int i = blocks - 1; i >= 0; i--) {
+			st.push(i);
+		}
+	}
+	~StackPool() {
+		while (!st.empty()) {
+			st.pop();
+		}
+		delete data;
+	}
+	LPPER_IO_DATA malloc() {
+		if (st.empty()) {
+			return NULL;
+		}
+		int idx = st.top();
+		st.pop();
+
+		return (LPPER_IO_DATA) (data + (idx * (sizeof(PER_IO_DATA))));
+	}
+	void free(LPPER_IO_DATA freePoint) {
+		DWORD returnIdx = ((((char*) freePoint) - data) / sizeof(PER_IO_DATA));
+		st.push(returnIdx);
+	}
+};
+
+class ArrayPool {
+private:
+	char* data;
+	bool* arr;
+	DWORD cnt;
+	DWORD idx;
+	DWORD len;
+	CRITICAL_SECTION cs; // 메모리풀 동기화 크리티컬섹션
+public:
+	ArrayPool(DWORD size) {
+		data = (char*) malloc(size * sizeof(PER_IO_DATA));
+		arr = (bool*) malloc(size);
+		cnt = size;
+		idx = 0;
+		len = size;
+		memset(arr, 0, size);
+		InitializeCriticalSection(&cs);
+	}
+	~ArrayPool() {
+		cnt = 0;
+		idx = 0;
+		free(data);
+		free(arr);
+		DeleteCriticalSection(&cs);
+	}
+	LPPER_IO_DATA Malloc() {
+		EnterCriticalSection(&cs);
+
+		if (cnt == 0) { // 5 블록 더할당
+			len += 5;
+			data = (char*) realloc(data, (len + 5) * sizeof(PER_IO_DATA));
+			arr = (bool*) realloc(arr, (len + 5) * sizeof(bool));
+			cnt += len;
+			memset(arr + 1, 0, 5);
+		}
+
+		while (arr[idx]) {
+			idx++;
+			if (idx == cnt) {
+				idx = 0;
+			}
+		}
+
+		arr[idx] = true; // 할당여부 true
+		idx++;
+		cnt--; // 전체카운트 마이너스
+		char* alloc;
+		if (idx == cnt) { // 인덱스가 마지막 번째일때
+			idx = 0;
+			alloc = (data + ((cnt - 1) * (sizeof(PER_IO_DATA))));
+		} else {
+			alloc = (data + ((idx - 1) * (sizeof(PER_IO_DATA))));
+		}
+		LeaveCriticalSection(&cs);
+		return (LPPER_IO_DATA) alloc;
+	}
+
+	void Free(LPPER_IO_DATA freePoint) {
+		DWORD returnIdx = ((((char*) freePoint) - data) / sizeof(PER_IO_DATA));
+		EnterCriticalSection(&cs);
+		memset(freePoint, 0, sizeof(PER_IO_DATA));
+		cnt++; // 전체카운트 원상복구
+		idx = returnIdx; // 반환된것을 바로 반환
+		arr[returnIdx] = false;
+		LeaveCriticalSection(&cs);
+	}
+};
+
+class CharPool {
+private:
+	char* data; // 동적할당 대상 주소
+	bool* arr; // block들의 할당 여부
+	DWORD cnt; // 전체 블록수
+	DWORD idx; // 반환 대상 idx
+	DWORD len;
+	CRITICAL_SECTION cs; // 메모리풀 동기화 크리티컬섹션
+public:
+	CharPool(DWORD size) {
+		data = (char*) malloc(size * BLOCK_SIZE);
+		arr = (bool*) malloc(size);
+		cnt = size;
+		idx = 0;
+		len = size;
+		memset(arr, 0, size);
+		InitializeCriticalSection(&cs);
+	}
+	~CharPool() {
+		cnt = 0;
+		idx = 0;
+		free(data);
+		free(arr);
+		DeleteCriticalSection(&cs);
+	}
+	char* Malloc() {
+		EnterCriticalSection(&cs);
+
+		if (cnt == 0) { // 5 블록 더할당
+			len += 5;
+			data = (char*) realloc(data, (len + 5) * BLOCK_SIZE);
+			arr = (bool*) realloc(arr, (len + 5) * sizeof(bool));
+			cnt += len;
+			memset(arr + 1, 0, 5);
+		}
+
+		while (arr[idx]) {
+			idx++;
+			if (idx == cnt) {
+				idx = 0;
+			}
+		}
+
+		arr[idx] = true; // 할당여부 true
+		idx++;
+		cnt--; // 전체카운트 마이너스
+		char* alloc;
+		if (idx == cnt) { // 인덱스가 마지막 번째일때
+			idx = 0;
+			alloc = (data + ((cnt - 1) * BLOCK_SIZE));
+		} else {
+			alloc = (data + ((idx - 1) * BLOCK_SIZE));
+		}
+		LeaveCriticalSection(&cs);
+		return alloc;
+	}
+
+	void Free(char* freePoint) {
+		DWORD returnIdx = ((freePoint - data) / BLOCK_SIZE);
+		EnterCriticalSection(&cs);
+		memset(freePoint, 0, BLOCK_SIZE);
+		cnt++; // 전체카운트 원상복구
+		idx = returnIdx; // 반환된것을 바로 반환
+		arr[returnIdx] = false;
+		LeaveCriticalSection(&cs);
+	}
+};
+
 int main() {
 
-	ListPool pool(3);
+//	clock_t begin, end;
+//	ArrayPool* ap = new ArrayPool(3);
+//
+//	LPPER_IO_DATA p1 = ap->Malloc();
+//	printf("%u\n", p1);
+//	LPPER_IO_DATA p2 = ap->Malloc();
+//	printf("%u\n", p2);
+//	LPPER_IO_DATA p3 = ap->Malloc();
+//	printf("%u\n", p3);
+//	ap->Free(p1);
+//	ap->Free(p2);
+//	LPPER_IO_DATA p4 = ap->Malloc();
+//	printf("%u\n", p4);
+//	LPPER_IO_DATA p5 = ap->Malloc();
+//	printf("%u\n", p5);
 
-	LPPER_IO_DATA p1 = pool.malloc();
-	printf("%u\n", p1);
-	LPPER_IO_DATA p2 = pool.malloc();
-	printf("%u\n", p2);
-	LPPER_IO_DATA p3 = pool.malloc();
-	printf("%u\n", p3);
-	pool.free(p2);
-	LPPER_IO_DATA p4 = pool.malloc();
-	printf("%u\n", p4);
+//	cout << "ArrayPool" << endl;
+//	ListPool* lp = new ListPool(100);
+//	cout << "ListPool" << endl;
+//	QueuePool* qp = new QueuePool(100);
+//	cout << "QueuePool" << endl;
+//	StackPool* sp = new StackPool(100);
+//	cout << "StackPool" << endl;
+//	cout << "Start" << endl;
+//	begin = clock();
+//	for (int i = 0; i < 1000000; i++) {
+//		LPPER_IO_DATA p = ap->Malloc();
+//		ap->Free(p);
+//	}
+//	end = clock();
+//	cout << (end - begin) << endl;
+//
+//	begin = clock();
+//	for (int i = 0; i < 1000000; i++) {
+//		LPPER_IO_DATA p = lp->malloc();
+//		lp->free(p);
+//	}
+//	end = clock();
+//	cout << (end - begin) << endl;
+//
+//	begin = clock();
+//	for (int i = 0; i < 1000000; i++) {
+//		LPPER_IO_DATA p = qp->malloc();
+//		qp->free(p);
+//	}
+//	end = clock();
+//	cout << (end - begin) << endl;
+//
+//	begin = clock();
+//	for (int i = 0; i < 1000000; i++) {
+//		LPPER_IO_DATA p = sp->malloc();
+//		sp->free(p);
+//	}
+//	end = clock();
+//	cout << (end - begin) << endl;
+//	string str;
+//	cin >> str;
+
 	return 0;
 }

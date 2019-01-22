@@ -19,6 +19,7 @@ private:
 	bool* arr; // block들의 할당 여부
 	DWORD cnt; // 전체 블록수
 	DWORD idx; // 반환 대상 idx
+	CRITICAL_SECTION cs; // 메모리풀 동기화 크리티컬섹션
 	CharPool();
 	~CharPool();
 	static CharPool* instance; // Singleton Instance

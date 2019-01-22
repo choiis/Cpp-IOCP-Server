@@ -7,6 +7,7 @@
 //============================================================================
 #include <iostream>
 #include <stdio.h>
+#include <string>
 #include <stdlib.h>
 #include <process.h>
 #include <winsock2.h>
@@ -34,21 +35,20 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 		bool success = GetQueuedCompletionStatus(hComPort, &bytesTrans,
 				(LPDWORD) &sock, (LPOVERLAPPED*) &ioInfo, INFINITE);
-
+		
 		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
 			// 콘솔 강제종료 처리
 			businessService->ClientExit(sock);
 
 			MPool* mp = MPool::getInstance();
 			mp->free(ioInfo);
-		} else if (READ == ioInfo->serverMode
-				|| READ_MORE == ioInfo->serverMode) { // Recv 끝난경우
+		} else if ((READ == ioInfo->serverMode
+				|| READ_MORE == ioInfo->serverMode) && bytesTrans != SIZE) { // Recv 끝난경우
 
 				// 데이터 읽기 과정
 			businessService->PacketReading(ioInfo, bytesTrans);
 			if ((ioInfo->recvByte < ioInfo->totByte)
 					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
-
 				businessService->BusinessService::getIocpService()->RecvMore(
 						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
 			} else { // 다 받은 후 정상 로직
@@ -57,7 +57,6 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 				char *msg = businessService->DataCopy(ioInfo, &clientStatus,
 						&direction);
 				// DataCopy에서 받은 ioInfo 모두 free
-
 				if (businessService->getUserMap().find(sock)
 						== businessService->getUserMap().end()) { // 세션값 없음 => 로그인 이전 분기
 						// 로그인 이전 로직 처리
@@ -85,20 +84,21 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 					// Recv는 계속한다
 					businessService->BusinessService::getIocpService()->Recv(
-							sock); // 패킷 더받기
+							sock); 
 				}
 
 			}
 		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
-			// cout << "message send" << endl;
 			CharPool* charPool = CharPool::getInstance();
-			charPool->free(ioInfo->wsaBuf.buf);
 
+			charPool->free(ioInfo->wsaBuf.buf);
 			MPool* mp = MPool::getInstance();
+			
 			mp->free(ioInfo);
 		} else {
-			MPool* mp = MPool::getInstance();
-			mp->free(ioInfo);
+			// Recv는 계속한다
+			businessService->BusinessService::getIocpService()->Recv(
+				sock); 
 		}
 	}
 	return 0;
