@@ -18,13 +18,13 @@ IocpService::~IocpService() {
 // 한명에게 메세지 전달
 void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, int status) {
 	MPool* mp = MPool::getInstance();
-	LPPER_IO_DATA ioInfo = mp->malloc();
+	LPPER_IO_DATA ioInfo = mp->Malloc();
 
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 
 	int len = strlen(msg) + 1;
 	CharPool* charPool = CharPool::getInstance();
-	char* packet = charPool->malloc(); // char[len + (3 * sizeof(int))];
+	char* packet = charPool->Malloc(); // char[len + (3 * sizeof(int))];
 
 	memcpy(packet, &len, 4); // dataSize;
 	memcpy(((char*) packet) + 4, &status, 4); // status;
@@ -32,7 +32,7 @@ void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, int status) {
 	memcpy(((char*) packet) + 12, msg, len); // status
 
 	ioInfo->wsaBuf.buf = (char*) packet;
-	ioInfo->wsaBuf.len = len + (3 * sizeof(int));
+	ioInfo->wsaBuf.len = min(len + 12, SIZE);
 	ioInfo->serverMode = WRITE; // GetQueuedCompletionStatus 이후 분기가 Send로 갈수 있게
 	ioInfo->totByte = 1;
 	ioInfo->recvByte = 0;
@@ -47,14 +47,14 @@ void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
 	MPool* mp = MPool::getInstance();
 
 	list<SOCKET>::const_iterator iter; // 변경 불가능 객체를 가리키는 반복자
-
+	
 	EnterCriticalSection(listCs);
 	for (iter = lists.begin(); iter != lists.end(); iter++) {
 		// ioInfo를 각개 만들어서 보내자
-		LPPER_IO_DATA ioInfo = mp->malloc();
+		LPPER_IO_DATA ioInfo = mp->Malloc();
 		int len = strlen(msg) + 1;
 		CharPool* charPool = CharPool::getInstance();
-		char* packet = charPool->malloc(); // char[len + (3 * sizeof(int))];
+		char* packet = charPool->Malloc(); // char[len + (3 * sizeof(int))];
 
 		memcpy(packet, &len, 4); // dataSize;
 		memcpy(((char*) packet) + 4, &status, 4); // status;
@@ -62,7 +62,7 @@ void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
 		memcpy(((char*) packet) + 12, msg, len); // status
 
 		ioInfo->wsaBuf.buf = (char*) packet;
-		ioInfo->wsaBuf.len = len + (3 * sizeof(int));
+		ioInfo->wsaBuf.len = min(len + 12, SIZE);
 		ioInfo->serverMode = WRITE; // GetQueuedCompletionStatus 이후 분기가 Send로 갈수 있게
 		ioInfo->recvByte = 0;
 
@@ -91,7 +91,7 @@ void IocpService::RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo) {
 // Recv 공통함수
 void IocpService::Recv(SOCKET sock) {
 	MPool* mp = MPool::getInstance();
-	LPPER_IO_DATA ioInfo = mp->malloc();
+	LPPER_IO_DATA ioInfo = mp->Malloc();
 
 	DWORD recvBytes = 0;
 	DWORD flags = 0;

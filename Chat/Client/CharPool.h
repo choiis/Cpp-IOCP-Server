@@ -10,15 +10,16 @@
 
 #include <iostream>
 #include <winsock2.h>
+#include <queue>
+#include "common.h"
 
 #define BLOCK_SIZE 256
 
 class CharPool {
 private:
-	char* data; // 동적할당 대상 주소
-	bool* arr; // block들의 할당 여부
-	DWORD cnt; // 전체 블록수
-	DWORD idx; // 반환 대상 idx
+	char* data;
+	queue<char*> poolQueue;
+	DWORD len;
 	CRITICAL_SECTION cs; // 메모리풀 동기화 크리티컬섹션
 	CharPool();
 	~CharPool();
@@ -32,13 +33,10 @@ public:
 		return instance;
 	}
 	// 메모리풀 할당
-	char* malloc();
+	char* Malloc();
 	// 메모리풀 반환
-	void free(char* freePoint);
-	// 사이즈
-	DWORD blockSize() {
-		return cnt;
-	}
+	void Free(char* freePoint);
+
 };
 
 #endif /* CHARPOOL_H_ */

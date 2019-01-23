@@ -35,33 +35,32 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 		bool success = GetQueuedCompletionStatus(hComPort, &bytesTrans,
 				(LPDWORD) &sock, (LPOVERLAPPED*) &ioInfo, INFINITE);
-		
+
 		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
 			// 콘솔 강제종료 처리
 			businessService->ClientExit(sock);
 
 			MPool* mp = MPool::getInstance();
-			mp->free(ioInfo);
+			mp->Free(ioInfo);
 		} else if ((READ == ioInfo->serverMode
 				|| READ_MORE == ioInfo->serverMode) && bytesTrans != SIZE) { // Recv 끝난경우
-
-				// 데이터 읽기 과정
+			
+			// 데이터 읽기 과정
 			businessService->PacketReading(ioInfo, bytesTrans);
 			if ((ioInfo->recvByte < ioInfo->totByte)
 					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 				businessService->BusinessService::getIocpService()->RecvMore(
 						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
 			} else { // 다 받은 후 정상 로직
-				int clientStatus = -1;
 				int direction = -1;
-				char *msg = businessService->DataCopy(ioInfo, &clientStatus,
-						&direction);
+				int nowStatus = -1;
+				char *msg = businessService->DataCopy(ioInfo, &nowStatus, &direction);
+
 				// DataCopy에서 받은 ioInfo 모두 free
 				if (businessService->getUserMap().find(sock)
 						== businessService->getUserMap().end()) { // 세션값 없음 => 로그인 이전 분기
 						// 로그인 이전 로직 처리
-					businessService->StatusLogout(sock, clientStatus, direction,
-							msg);
+					businessService->StatusLogout(sock, direction, msg);
 					// Recv는 계속한다
 
 					businessService->BusinessService::getIocpService()->Recv(
@@ -69,36 +68,40 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 					// 세션값 없음 => 로그인 이전 분기 끝
 				} else { // 세션값 있을때 => 대기방 또는 채팅방 상태
 
+					CRITICAL_SECTION cs = businessService->getUserCs();
+					EnterCriticalSection(&cs);
 					int status =
-							businessService->getUserMap().find(sock)->second.status;
+						businessService->getUserMap().find(sock)->second.status;
+					LeaveCriticalSection(&cs);
 
-					if (status == STATUS_WAITING) { // 대기실 케이스
+					if (status == STATUS_WAITING ) { // 대기실 케이스
 						// 대기실 처리 함수
 						businessService->StatusWait(sock, status, direction,
 								msg);
-					} else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
+					}
+					else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
 						// 채팅방 처리 함수
+						
 						businessService->StatusChat(sock, status, direction,
 								msg);
 					}
 
 					// Recv는 계속한다
 					businessService->BusinessService::getIocpService()->Recv(
-							sock); 
+							sock);
 				}
 
 			}
 		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
 			CharPool* charPool = CharPool::getInstance();
 
-			charPool->free(ioInfo->wsaBuf.buf);
+			charPool->Free(ioInfo->wsaBuf.buf);
 			MPool* mp = MPool::getInstance();
-			
-			mp->free(ioInfo);
+
+			mp->Free(ioInfo);
 		} else {
 			// Recv는 계속한다
-			businessService->BusinessService::getIocpService()->Recv(
-				sock); 
+			businessService->BusinessService::getIocpService()->Recv(sock);
 		}
 	}
 	return 0;

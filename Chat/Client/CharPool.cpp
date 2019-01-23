@@ -8,52 +8,45 @@
 #include "CharPool.h"
 // 생성자
 CharPool::CharPool() {
-	data = new char[1000 * BLOCK_SIZE]; // size 곱하기 블록수 만큼 할당
-	arr = new bool[1000]; // idx번째 메모리 풀의 할당 여부를 가진다
-	cnt = 1000;
-	idx = 0;
+	data = (char*) malloc(BLOCK_SIZE * 1000);
+	DWORD i = 0;
+	len = 1000;
 	InitializeCriticalSectionAndSpinCount(&cs, 2000);
-	memset(this->arr, 0, 1000);
+	for (i = 0; i < 1000; i++) {
+		poolQueue.push(data + (BLOCK_SIZE * i));
+	}
+
 }
 // Singleton Instance
 CharPool* CharPool::instance = nullptr;
 
 CharPool::~CharPool() {
-	delete data;
-	delete arr;
 	DeleteCriticalSection(&cs);
+	while (!poolQueue.empty()) {
+		poolQueue.pop();
+	}
+	free(data);
 }
 // 메모리풀 할당
-char* CharPool::malloc() {
+char* CharPool::Malloc() {
 	EnterCriticalSection(&cs);
-	// 할당이 안된 저장소를 찾는다
-	while (arr[idx]) {
-		idx++;
-		if (idx == cnt) {
-			idx = 0;
+	if (poolQueue.empty()) { // 더 할당 필요한 경우 len(초기 blocks만큼 추가)
+		data = (char*) realloc(data, (len + len) * BLOCK_SIZE);
+		DWORD i = 0;
+		for (i = 0; i < len; i++) {
+			poolQueue.push(data + (BLOCK_SIZE * (len + i)));
 		}
+		len += len;
 	}
-
-	arr[idx] = true; // 할당여부 true
-	idx++;
-	char* alloc;
-	if (idx == cnt) { // 인덱스가 마지막 번째일때
-		idx = 0;
-		alloc = (data + ((cnt - 1) * BLOCK_SIZE));
-	} else {
-		alloc = (data + ((idx - 1) * BLOCK_SIZE));
-	}
+	char* pointer = poolQueue.front();
+	poolQueue.pop();
 	LeaveCriticalSection(&cs);
-	return alloc;
+	return pointer;
 }
 // 메모리풀 반환
-void CharPool::free(char* freePoint) { // 반환한 포인터의 idx를 원상복구
-	DWORD returnIdx = ((((char*) freePoint) - data) / BLOCK_SIZE);
+void CharPool::Free(char* freePoint) { // 반환한 포인터의 idx를 원상복구
 	EnterCriticalSection(&cs);
-	memset(freePoint, 0, BLOCK_SIZE);
-	idx = returnIdx;
-	// 반환된 idx의 할당여부 No
-	arr[returnIdx] = false;
+	poolQueue.push((char*) freePoint);
 	LeaveCriticalSection(&cs);
 }
 

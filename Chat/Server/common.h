@@ -32,12 +32,12 @@ using namespace std;
 #define USER_OUT 4
 
 // 서버에 올 지시 사항
-#define ROOM_MAKE 1
-#define ROOM_ENTER 2
-#define ROOM_OUT 3
-#define WHISPER 4
-#define ROOM_INFO 5
-#define ROOM_USER_INFO 6
+#define ROOM_MAKE 6
+#define ROOM_ENTER 7
+#define ROOM_OUT 8
+#define WHISPER 9
+#define ROOM_INFO 10
+#define ROOM_USER_INFO 11
 // 로그인 중복 방지
 #define NOW_LOGOUT 0
 #define NOW_LOGIN 1

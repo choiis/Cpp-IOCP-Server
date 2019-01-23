@@ -42,7 +42,7 @@ void BusinessService::InitUser(const char *id, SOCKET sock) {
 
 	PER_HANDLE_DATA userInfo;
 	cout << "START user : " << name << endl;
-	// cout << "sock : " << sock << endl;
+	cout << "sock : " << sock << endl;
 	// 유저의 상태 정보 초기화
 	userInfo.status = STATUS_WAITING;
 
@@ -133,27 +133,25 @@ void BusinessService::ClientExit(SOCKET sock) {
 
 // 로그인 이전 로직처리
 // 세션값 없을 때 로직
-void BusinessService::StatusLogout(SOCKET sock, int status, int direction,
-		char *message) {
+void BusinessService::StatusLogout(SOCKET sock, int direction, char *message) {
 
-	if (status == STATUS_LOGOUT) {
+	// memcpy 부분 삭제
+	string msg = "";
 
-		// memcpy 부분 삭제
-		string msg = "";
-
-		if (direction == USER_MAKE) { // 1번 계정생성
-			// cout << "USER MAKE" << endl;
-			USER_DATA userData;
-			char *sArr[3] = { NULL, };
-			char *ptr = strtok(message, "\\"); // 공백 문자열을 기준으로 문자열을 자름
-			int i = 0;
-			while (ptr != NULL)            // 자른 문자열이 나오지 않을 때까지 반복
-			{
-				sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
-				i++;                       // 인덱스 증가
-				ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
-			}
-			// 유효성 검증 필요
+	if (direction == USER_MAKE) { // 1번 계정생성
+		// cout << "USER MAKE" << endl;
+		USER_DATA userData;
+		char *sArr[3] = { NULL, };
+		char *ptr = strtok(message, "\\"); // 공백 문자열을 기준으로 문자열을 자름
+		int i = 0;
+		while (ptr != NULL)            // 자른 문자열이 나오지 않을 때까지 반복
+		{
+			sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
+			i++;                       // 인덱스 증가
+			ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
+		}
+		// 유효성 검증 필요
+		if (sArr[0] != NULL && sArr[1] != NULL && sArr[2] != NULL) {
 			EnterCriticalSection(&idCs); // 동시적으로 같은 ID 입력 방지
 			if (idMap.find(sArr[0]) == idMap.end()) { // ID 중복체크
 
@@ -169,75 +167,85 @@ void BusinessService::StatusLogout(SOCKET sock, int status, int direction,
 				msg.append(loginBeforeMessage);
 
 				iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
-			} else { // ID중복있음
+			}
+			else { // ID중복있음
 				LeaveCriticalSection(&idCs); // Case Lock 해제
 				msg.append("중복된 아이디가 있습니다!\n");
 				msg.append(loginBeforeMessage);
 
 				iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
 			}
+		}
+		
 
-		} else if (direction == USER_ENTER) { // 2번 로그인 시도
-			// cout << "USER ENTER" << endl;
-			char *sArr[2] = { NULL, };
-			char *ptr = strtok(message, "\\"); // 공백 문자열을 기준으로 문자열을 자름
-			int i = 0;
-			while (ptr != NULL)            // 자른 문자열이 나오지 않을 때까지 반복
-			{
-				sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
-				i++;                       // 인덱스 증가
-				ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
-			}
-
+	} else if (direction == USER_ENTER) { // 2번 로그인 시도
+		// cout << "USER ENTER" << endl;
+		char *sArr[2] = { NULL, };
+		char *ptr = strtok(message, "\\"); // 공백 문자열을 기준으로 문자열을 자름
+		int i = 0;
+		while (ptr != NULL)            // 자른 문자열이 나오지 않을 때까지 반복
+		{
+			sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
+			i++;                       // 인덱스 증가
+			ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
+		}
+		if (sArr[0] != NULL && sArr[1] !=NULL ) {
+			EnterCriticalSection(&idCs); 
 			if (idMap.find(sArr[0]) == idMap.end()) { // 계정 없음
+				LeaveCriticalSection(&idCs); // Case Lock 해제
 				msg.append("없는 계정입니다 아이디를 확인하세요!\n");
 				msg.append(loginBeforeMessage);
 
 				iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
-			} else if (idMap.find(sArr[0])->second.password.compare(
-					string(sArr[1])) == 0) { // 비밀번호 일치
-
+			}	else if (idMap.find(sArr[0])->second.password.compare(string(sArr[1]))
+				== 0) { // 비밀번호 일치
+				LeaveCriticalSection(&idCs); // Case Lock 해제
 				if (idMap.find(sArr[0])->second.logMode == NOW_LOGIN) { // 중복로그인 유효성 검사
+
 					msg.append("중복 로그인은 안됩니다!\n");
 					msg.append(loginBeforeMessage);
 
 					iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
-				} else { // 중복로그인 X
+				}
+				else { // 중복로그인 X
 					InitUser(sArr[0], sock); // 세션정보 저장
 				}
 
-			} else { // 비밀번호 틀림
+			}
+			else { // 비밀번호 틀림
+				LeaveCriticalSection(&idCs); // Case Lock 해제
 				msg.append("비밀번호 틀림!\n");
 				msg.append(loginBeforeMessage);
 
 				iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
 			}
-
-		} else if (direction == USER_LIST) { // 유저들 정보 요청
-			// cout << "USER LIST" << endl;
-			string userList = "아이디 정보 리스트";
-			if (idMap.size() == 0) {
-				userList += " 없음";
-			} else {
-				unordered_map<string, USER_DATA> idCopyMap = idMap;
-				// 동기화 없이 깊은복사
-				unordered_map<string, USER_DATA>::const_iterator iter;
-				for (iter = idCopyMap.begin(); iter != idCopyMap.end();
-						++iter) {
-					userList += "\n";
-					userList += (iter->first).c_str();
-				}
-			}
-			iocpService->SendToOneMsg(userList.c_str(), sock, STATUS_LOGOUT);
-		} else { // 그외 명령어 입력
-			string sendMsg = errorMessage;
-			// sendMsg += waitRoomMessage;
-			// 대기방의 오류이므로 STATUS_WAITING 상태로 전달한다
-			iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_LOGOUT);
 		}
+		
+
+	} else if (direction == USER_LIST) { // 유저들 정보 요청
+		// cout << "USER LIST" << endl;
+		string userList = "아이디 정보 리스트";
+		if (idMap.size() == 0) {
+			userList += " 없음";
+		} else {
+			unordered_map<string, USER_DATA> idCopyMap = idMap;
+			// 동기화 없이 깊은복사
+			unordered_map<string, USER_DATA>::const_iterator iter;
+			for (iter = idCopyMap.begin(); iter != idCopyMap.end(); ++iter) {
+				userList += "\n";
+				userList += (iter->first).c_str();
+			}
+		}
+		iocpService->SendToOneMsg(userList.c_str(), sock, STATUS_LOGOUT);
+	} else { // 그외 명령어 입력
+		string sendMsg = errorMessage;
+		// sendMsg += waitRoomMessage;
+		// 대기방의 오류이므로 STATUS_WAITING 상태로 전달한다
+		iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_LOGOUT);
 	}
+
 	CharPool* charPool = CharPool::getInstance();
-	charPool->free(message);
+	charPool->Free(message);
 }
 
 // 대기실에서의 로직 처리
@@ -252,14 +260,16 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 	if (direction == ROOM_MAKE) { // 새로운 방 만들때
 		// cout << "ROOM MAKE" << endl;
 		// 유효성 검증 먼저
+		EnterCriticalSection(&roomCs);
 		if (roomMap.count(msg) != 0) { // 방이름 중복
+			LeaveCriticalSection(&roomCs);
 			msg += "이미 있는 방 이름입니다!\n";
 			msg += waitRoomMessage;
 
 			iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_WAITING);
 			// 중복 케이스는 방 만들 수 없음
 		} else { // 방이름 중복 아닐 때만 개설
-
+			LeaveCriticalSection(&roomCs);
 			// 새로운 방 정보 저장
 			ROOM_DATA roomData;
 			list<SOCKET> chatList;
@@ -332,33 +342,31 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 			str = "만들어진 방이 없습니다";
 		} else {
 			str += "방 정보 리스트";
-
-			unordered_map<string, ROOM_DATA> roomCopyMap = roomMap;
+			EnterCriticalSection(&roomCs);
 			// 동기화 없이 깊은복사
 			unordered_map<string, ROOM_DATA>::const_iterator iter;
 			// 방정보를 문자열로 만든다
 
-			for (iter = roomCopyMap.begin(); iter != roomCopyMap.end();
+			for (iter = roomMap.begin(); iter != roomMap.end();
 					iter++) {
 
 				str += "\n";
 				str += iter->first.c_str();
 				str += " : ";
-				//str += to_string((iter->second).userList.size());
+				str += to_string((iter->second).userList.size());
 				str += "명";
 			}
-
+			LeaveCriticalSection(&roomCs);
 		}
 
 		iocpService->SendToOneMsg(str.c_str(), sock, STATUS_WAITING);
 	} else if (direction == ROOM_USER_INFO) { // 유저 정보 요청시
 		string str = "유저 정보 리스트";
 
-		unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap;
-		// 동기화 없이 깊은복사
+		
 		unordered_map<SOCKET, PER_HANDLE_DATA>::iterator iter;
-
-		for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
+		EnterCriticalSection(&userCs);
+		for (iter = userMap.begin(); iter != userMap.end(); iter++) {
 			str += "\n";
 			str += (iter->second).userName;
 			str += " : ";
@@ -368,6 +376,7 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 				str += (iter->second).roomName;
 			}
 		}
+		LeaveCriticalSection(&roomCs);
 
 		iocpService->SendToOneMsg(str.c_str(), sock, STATUS_WAITING);
 	} else if (direction == WHISPER) { // 귓속말
@@ -381,45 +390,49 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 			i++;                       // 인덱스 증가
 			ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
 		}
-		name = string(sArr[0]);
-		msg = string(sArr[1]);
+		if (sArr[0] != NULL && sArr[1]!=NULL) {
+			name = string(sArr[0]);
+			msg = string(sArr[1]);
 
-		string sendMsg;
+			string sendMsg;
 
-		if (name.compare(userMap.find(sock)->second.userName) == 0) { // 본인에게 쪽지
-			sendMsg = "자신에게 쪽지를 보낼수 없습니다\n";
-			sendMsg += waitRoomMessage;
+			if (name.compare(userMap.find(sock)->second.userName) == 0) { // 본인에게 쪽지
+				sendMsg = "자신에게 쪽지를 보낼수 없습니다\n";
+				sendMsg += waitRoomMessage;
 
-			iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_WAITING);
-		} else {
-			bool find = false;
-			unordered_map<SOCKET, PER_HANDLE_DATA>::iterator iter;
-			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap;
-			// 동기화 없이 깊은복사
+				iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_WAITING);
+			}
+			else {
+				bool find = false;
+				unordered_map<SOCKET, PER_HANDLE_DATA>::iterator iter;
 
-			for (iter = userCopyMap.begin(); iter != userCopyMap.end();
+				EnterCriticalSection(&userCs);
+				for (iter = userMap.begin(); iter != userMap.end();
 					iter++) {
-				if (name.compare(iter->second.userName) == 0) {
-					find = true;
-					sendMsg = userMap.find(sock)->second.userName;
-					sendMsg += " 님에게 온 귓속말 : ";
-					sendMsg += msg;
+					if (name.compare(iter->second.userName) == 0) {
+						find = true;
+						sendMsg = userMap.find(sock)->second.userName;
+						sendMsg += " 님에게 온 귓속말 : ";
+						sendMsg += msg;
 
-					iocpService->SendToOneMsg(sendMsg.c_str(), iter->first,
-					STATUS_WHISPER);
-					break;
+						iocpService->SendToOneMsg(sendMsg.c_str(), iter->first,
+							STATUS_WHISPER);
+						break;
+					}
+				}
+				LeaveCriticalSection(&roomCs);
+
+				// 귓속말 대상자 못찾음
+				if (!find) {
+					sendMsg = name;
+					sendMsg += " 님을 찾을 수 없습니다";
+
+					iocpService->SendToOneMsg(sendMsg.c_str(), sock,
+						STATUS_WAITING);
 				}
 			}
-
-			// 귓속말 대상자 못찾음
-			if (!find) {
-				sendMsg = name;
-				sendMsg += " 님을 찾을 수 없습니다";
-
-				iocpService->SendToOneMsg(sendMsg.c_str(), sock,
-				STATUS_WAITING);
-			}
 		}
+		
 
 	} else if (msg.compare("6") == 0) { // 로그아웃
 
@@ -441,7 +454,7 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 	}
 
 	CharPool* charPool = CharPool::getInstance();
-	charPool->free(message);
+	charPool->Free(message);
 }
 
 // 채팅방에서의 로직 처리
@@ -464,12 +477,12 @@ void BusinessService::StatusChat(SOCKET sock, int status, int direction,
 		sendMsg += " 님이 나갔습니다!";
 
 		if (roomMap.find(userMap.find(sock)->second.roomName)
-				!= roomMap.end()) { // null 검사
+			!= roomMap.end()) { // null 검사
 
 			iocpService->SendToRoomMsg(sendMsg.c_str(),
-					roomMap.find(userMap.find(sock)->second.roomName)->second.userList,
-					STATUS_CHATTIG,
-					&roomMap.find(userMap.find(sock)->second.roomName)->second.listCs);
+				roomMap.find(userMap.find(sock)->second.roomName)->second.userList,
+				STATUS_CHATTIG,
+				&roomMap.find(userMap.find(sock)->second.roomName)->second.listCs);
 
 			roomName = userMap.find(sock)->second.roomName;
 			// 방이름 임시 저장
@@ -494,7 +507,6 @@ void BusinessService::StatusChat(SOCKET sock, int status, int direction,
 			roomMap.erase(roomName);
 		}
 		LeaveCriticalSection(&roomCs);
-
 	} else { // 채팅방에서 채팅중
 
 		string sendMsg;
@@ -502,9 +514,7 @@ void BusinessService::StatusChat(SOCKET sock, int status, int direction,
 		sendMsg += " : ";
 		sendMsg += msg;
 
-		if (roomMap.find(userMap.find(sock)->second.roomName)
-				!= roomMap.end()) { // null 검사
-
+		if (roomMap.find(userMap.find(sock)->second.roomName) != roomMap.end()) { // null 검사
 			iocpService->SendToRoomMsg(sendMsg.c_str(),
 					roomMap.find(userMap.find(sock)->second.roomName)->second.userList,
 					STATUS_CHATTIG,
@@ -512,66 +522,71 @@ void BusinessService::StatusChat(SOCKET sock, int status, int direction,
 		}
 	}
 	CharPool* charPool = CharPool::getInstance();
-	charPool->free(message);
+	charPool->Free(message);
 }
 
 // 클라이언트에게 받은 데이터 복사후 구조체 해제
-char* BusinessService::DataCopy(LPPER_IO_DATA ioInfo, int *status,
-		int *direction) {
-	memcpy(status, ((char*) ioInfo->recvBuffer) + 4, 4); // Status
-	memcpy(direction, ((char*) ioInfo->recvBuffer) + 8, 4); // Direction
-	CharPool* charPool = CharPool::getInstance();
-	char* msg = charPool->malloc(); // char[ioInfo->bodySize];	// Msg
+char* BusinessService::DataCopy(LPPER_IO_DATA ioInfo,int *status, int *direction) {
 
-	memcpy(msg, ((char*) ioInfo->recvBuffer) + 12, ioInfo->bodySize);
+	copy(((char*)ioInfo->recvBuffer) + 4, ((char*)ioInfo->recvBuffer) + 8,
+		(char*)status);
+	copy(((char*)ioInfo->recvBuffer) + 8, ((char*)ioInfo->recvBuffer) + 12,
+		(char*)direction);
+
+	CharPool* charPool = CharPool::getInstance();
+	char* msg = charPool->Malloc(); // char[ioInfo->bodySize];	// Msg
+
+	copy(((char*)ioInfo->recvBuffer) + 12,
+		((char*)ioInfo->recvBuffer) + 12 + ioInfo->bodySize, msg);
+
 	// 다 복사 받았으니 할당 해제
-	charPool->free(ioInfo->recvBuffer);
+	charPool->Free(ioInfo->recvBuffer);
 
 	MPool* mp = MPool::getInstance();
-	mp->free(ioInfo);
+	mp->Free(ioInfo);
 
 	return msg;
 }
 
 // 패킷 데이터 읽기
 void BusinessService::PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
-
 	// IO 완료후 동작 부분
 	if (READ == ioInfo->serverMode) {
 		if (bytesTrans < 4) { // 헤더를 다 못 읽어온 상황
-			memcpy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
-					ioInfo->buffer, bytesTrans);
-		} else {
-			memcpy(&(ioInfo->bodySize), ioInfo->buffer, 4);
+			copy(((char*)&(ioInfo->bodySize)) + ioInfo->recvByte, ((char*)&(ioInfo->bodySize)) + ioInfo->recvByte + bytesTrans, ioInfo->buffer);
+		}
+		else {
+			copy(ioInfo->buffer, ioInfo->buffer + 4, (char*)&(ioInfo->bodySize));
+			ioInfo->bodySize = min(ioInfo->bodySize, SIZE - 12);
 			CharPool* charPool = CharPool::getInstance();
-			ioInfo->recvBuffer = charPool->malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
-
-			memcpy(((char*) ioInfo->recvBuffer), ioInfo->buffer, bytesTrans);
+			ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+			if (bytesTrans > SIZE) {
+				cout << "Error" << endl;
+			}
+			copy(ioInfo->buffer, ioInfo->buffer + bytesTrans, ((char*)ioInfo->recvBuffer));
 		}
 		ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
-	} else { // 더 읽기
+	}
+	else { // 더 읽기
 		if (ioInfo->recvByte >= 4) { // 헤더 다 읽었음
-			memcpy(((char*) ioInfo->recvBuffer) + ioInfo->recvByte,
-					ioInfo->buffer, bytesTrans);
+			copy(ioInfo->buffer, ioInfo->buffer + bytesTrans, ((char*)ioInfo->recvBuffer) + ioInfo->recvByte);
 			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
-		} else { // 헤더를 다 못읽었음 경우
+		}
+		else { // 헤더를 다 못읽었음 경우
 			int recv = min(4 - ioInfo->recvByte, bytesTrans);
-			memcpy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
-					ioInfo->buffer, recv); // 헤더부터 채운다
-
+			copy(ioInfo->buffer, ioInfo->buffer + recv, ((char*)&(ioInfo->bodySize)) + ioInfo->recvByte);
+			ioInfo->bodySize = min(ioInfo->bodySize, SIZE - 12);
 			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 			if (ioInfo->recvByte >= 4) {
 				CharPool* charPool = CharPool::getInstance();
-				ioInfo->recvBuffer = charPool->malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
-
-				memcpy(((char*) ioInfo->recvBuffer) + 4,
-						((char*) ioInfo->buffer) + recv, bytesTrans - recv); // 이제 헤더는 필요없음 => 이때는 뒤의 데이터만 읽자
+				ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+				copy(((char*)ioInfo->buffer) + recv, ((char*)ioInfo->buffer) + recv + bytesTrans - recv, ((char*)ioInfo->recvBuffer) + 4);
 			}
 		}
 	}
 
 	if (ioInfo->totByte == 0 && ioInfo->recvByte >= 4) { // 헤더를 다 읽어야 토탈 바이트 수를 알 수 있다
-		ioInfo->totByte = ioInfo->bodySize + 12;
+		ioInfo->totByte = min(ioInfo->bodySize + 12, SIZE);
 	}
 }
 

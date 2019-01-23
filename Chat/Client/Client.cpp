@@ -275,14 +275,20 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 
 // 클라이언트에게 받은 데이터 복사후 구조체 해제
 char* DataCopy(LPPER_IO_DATA ioInfo, int *status) {
-	memcpy(status, ((char*) ioInfo->recvBuffer) + 4, 4); // Status
+	copy(((char*) ioInfo->recvBuffer) + 4, ((char*) ioInfo->recvBuffer) + 8,
+			(char*) status);
+//	copy(((char*) ioInfo->recvBuffer) + 8, ((char*) ioInfo->recvBuffer) + 12,
+//			(char*) direction);
+
 	CharPool* charPool = CharPool::getInstance();
 	char* msg = charPool->malloc(); // char[ioInfo->bodySize];	// Msg
-	memcpy(msg, ((char*) ioInfo->recvBuffer) + 12, ioInfo->bodySize);
+
+	copy(((char*) ioInfo->recvBuffer) + 12,
+			((char*) ioInfo->recvBuffer) + 12 + ioInfo->bodySize, msg);
+
 	// 다 복사 받았으니 할당 해제
 	charPool->free(ioInfo->recvBuffer);
 
-	// 메모리 해제
 	MPool* mp = MPool::getInstance();
 	mp->free(ioInfo);
 

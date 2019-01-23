@@ -10,6 +10,7 @@
 
 #include <winsock2.h>
 #include <unordered_map>
+#include <algorithm>
 #include <list>
 #include "common.h"
 #include "MPool.h"
