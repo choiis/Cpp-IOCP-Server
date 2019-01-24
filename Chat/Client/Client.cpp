@@ -56,7 +56,7 @@ void Recv(SOCKET sock) {
 	DWORD recvBytes = 0;
 	DWORD flags = 0;
 	MPool* mp = MPool::getInstance();
-	LPPER_IO_DATA ioInfo = mp->malloc();
+	LPPER_IO_DATA ioInfo = mp->Malloc();
 
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 	ioInfo->wsaBuf.len = SIZE;
@@ -74,17 +74,18 @@ void Recv(SOCKET sock) {
 // WSASend를 call
 void SendMsg(SOCKET clientSock, const char* msg, int status, int direction) {
 	MPool* mp = MPool::getInstance();
-	LPPER_IO_DATA ioInfo = mp->malloc();
+	LPPER_IO_DATA ioInfo = mp->Malloc();
 
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 
 	int len = strlen(msg) + 1;
 	CharPool* charPool = CharPool::getInstance();
-	char* packet = charPool->malloc(); // char[len + (3 * sizeof(int))];
-	memcpy(packet, &len, 4); // dataSize;
-	memcpy(((char*) packet) + 4, &status, 4); // status;
-	memcpy(((char*) packet) + 8, &direction, 4); // direction;
-	memcpy(((char*) packet) + 12, msg, len); // status;
+	char* packet = charPool->Malloc(); // char[len + (3 * sizeof(int))];
+
+	copy((char*) &len, (char*) &len + 4, packet); // dataSize
+	copy((char*) &status, (char*) &status + 4, packet + 4);  // status
+	copy((char*) &direction, (char*) &direction + 4, packet + 8);  // direction
+	copy(msg, msg + len, packet + 12);  // msg
 
 	ioInfo->wsaBuf.buf = (char*) packet;
 	ioInfo->wsaBuf.len = len + (3 * sizeof(int));
@@ -240,36 +241,42 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 	// IO 완료후 동작 부분
 	if (READ == ioInfo->serverMode) {
 		if (bytesTrans < 4) { // 헤더를 다 못 읽어온 상황
-			memcpy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
-					ioInfo->buffer, bytesTrans);
+			copy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
+					((char*) &(ioInfo->bodySize)) + ioInfo->recvByte
+							+ bytesTrans, ioInfo->buffer);
 		} else {
-			memcpy(&(ioInfo->bodySize), ioInfo->buffer, 4);
+			copy(ioInfo->buffer, ioInfo->buffer + 4,
+					(char*) &(ioInfo->bodySize));
+			ioInfo->bodySize = min(ioInfo->bodySize, SIZE - 12);
 			CharPool* charPool = CharPool::getInstance();
-			ioInfo->recvBuffer = charPool->malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
-			memcpy(((char*) ioInfo->recvBuffer), ioInfo->buffer, bytesTrans);
+			ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+			copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
+					((char*) ioInfo->recvBuffer));
 		}
 		ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 	} else { // 더 읽기
 		if (ioInfo->recvByte >= 4) { // 헤더 다 읽었음
-			memcpy(((char*) ioInfo->recvBuffer) + ioInfo->recvByte,
-					ioInfo->buffer, bytesTrans);
+			copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
+					((char*) ioInfo->recvBuffer) + ioInfo->recvByte);
 			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 		} else { // 헤더를 다 못읽었음 경우
 			int recv = min(4 - ioInfo->recvByte, bytesTrans);
-			memcpy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
-					ioInfo->buffer, recv); // 헤더부터 채운다
+			copy(ioInfo->buffer, ioInfo->buffer + recv,
+					((char*) &(ioInfo->bodySize)) + ioInfo->recvByte);
+			ioInfo->bodySize = min(ioInfo->bodySize, SIZE - 12);
 			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 			if (ioInfo->recvByte >= 4) {
 				CharPool* charPool = CharPool::getInstance();
-				ioInfo->recvBuffer = charPool->malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
-				memcpy(((char*) ioInfo->recvBuffer) + 4,
-						((char*) ioInfo->buffer) + recv, bytesTrans - recv); // 이제 헤더는 필요없음 => 이때는 뒤의 데이터만 읽자
+				ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+				copy(((char*) ioInfo->buffer) + recv,
+						((char*) ioInfo->buffer) + recv + bytesTrans - recv,
+						((char*) ioInfo->recvBuffer) + 4);
 			}
 		}
 	}
 
 	if (ioInfo->totByte == 0 && ioInfo->recvByte >= 4) { // 헤더를 다 읽어야 토탈 바이트 수를 알 수 있다
-		ioInfo->totByte = ioInfo->bodySize + 12;
+		ioInfo->totByte = min(ioInfo->bodySize + 12, SIZE);
 	}
 }
 
@@ -281,16 +288,16 @@ char* DataCopy(LPPER_IO_DATA ioInfo, int *status) {
 //			(char*) direction);
 
 	CharPool* charPool = CharPool::getInstance();
-	char* msg = charPool->malloc(); // char[ioInfo->bodySize];	// Msg
+	char* msg = charPool->Malloc(); // char[ioInfo->bodySize];	// Msg
 
 	copy(((char*) ioInfo->recvBuffer) + 12,
 			((char*) ioInfo->recvBuffer) + 12 + ioInfo->bodySize, msg);
 
 	// 다 복사 받았으니 할당 해제
-	charPool->free(ioInfo->recvBuffer);
+	charPool->Free(ioInfo->recvBuffer);
 
 	MPool* mp = MPool::getInstance();
-	mp->free(ioInfo);
+	mp->Free(ioInfo);
 
 	return msg;
 }
@@ -311,11 +318,12 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 			// 데이터 읽기 과정
 			PacketReading(ioInfo, bytesTrans);
 
-			if ((ioInfo->recvByte < ioInfo->totByte)
-					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
+			if (((ioInfo->recvByte < ioInfo->totByte)
+				|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) && ioInfo->recvByte < SIZE) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 
 				RecvMore(sock, ioInfo); // 패킷 더받기
-			} else {
+			}
+			else if (ioInfo->recvByte < SIZE - 12) {
 				int status;
 				char *msg = DataCopy(ioInfo, &status);
 
@@ -332,20 +340,29 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 					cout << msg << endl;
 				}
 				CharPool* charPool = CharPool::getInstance();
-				charPool->free(msg);
+				charPool->Free(msg);
+				Recv(sock);
+			}
+			else {
+				// 다 복사 받았으니 할당 해제
+				CharPool* charPool = CharPool::getInstance();
+				charPool->Free(ioInfo->recvBuffer);
+
+				MPool* mp = MPool::getInstance();
+				mp->Free(ioInfo);
 				Recv(sock);
 			}
 		} else if (WRITE == ioInfo->serverMode) {
 			MPool* mp = MPool::getInstance();
 			CharPool* charPool = CharPool::getInstance();
-			charPool->free(ioInfo->wsaBuf.buf);
-			mp->free(ioInfo);
+			charPool->Free(ioInfo->wsaBuf.buf);
+			mp->Free(ioInfo);
 		}
 
 	}
 	return 0;
 }
-int main(int argc, char* argv[0]) {
+int main() {
 
 	WSADATA wsaData;
 	SOCKET hSocket;

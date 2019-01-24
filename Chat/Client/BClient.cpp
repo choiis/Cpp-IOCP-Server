@@ -15,6 +15,7 @@
 #include <queue>
 #include <algorithm>
 #include <unordered_map>
+#include <ctime>
 #include <string>
 #include "common.h"
 #include "MPool.h"
@@ -114,10 +115,10 @@ void SendMsg(SOCKET clientSock, const char* msg, int direction) {
 	int len = strlen(msg) + 1;
 	CharPool* charPool = CharPool::getInstance();
 	char* packet = charPool->Malloc(); // char[len + (3 * sizeof(int))];
-	memcpy(packet, &len, 4); // dataSize;
-	//memcpy(((char*) packet) + 4, &status, 4); // status;
-	memcpy(((char*)packet) + 8, &direction, 4); // direction;
-	memcpy(((char*)packet) + 12, msg, len); // status;
+
+	copy((char*)&len, (char*)&len + 4, packet); // dataSize
+	copy((char*)&direction, (char*)&direction + 4, packet + 8);  // direction
+	copy(msg, msg + len, packet + 12);  // msg
 
 	ioInfo->wsaBuf.buf = (char*)packet;
 	ioInfo->wsaBuf.len = min(len + 12, SIZE);
@@ -132,35 +133,37 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 	// IO 완료후 동작 부분
 	if (READ == ioInfo->serverMode) {
 		if (bytesTrans < 4) { // 헤더를 다 못 읽어온 상황
-			memcpy(((char*)&(ioInfo->bodySize)) + ioInfo->recvByte,
-				ioInfo->buffer, bytesTrans);
-		}
-		else {
-			memcpy(&(ioInfo->bodySize), ioInfo->buffer, 4);
+			copy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
+					((char*) &(ioInfo->bodySize)) + ioInfo->recvByte
+							+ bytesTrans, ioInfo->buffer);
+			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
+		} else {
+			copy(ioInfo->buffer, ioInfo->buffer + 4,
+					(char*) &(ioInfo->bodySize));
 			ioInfo->bodySize = min(ioInfo->bodySize, SIZE - 12);
 			CharPool* charPool = CharPool::getInstance();
 			ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
-			memcpy(((char*)ioInfo->recvBuffer), ioInfo->buffer, bytesTrans);
+			copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
+				((char*)ioInfo->recvBuffer));
+			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신	
 		}
-		ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
-	}
-	else { // 더 읽기
+	} else { // 더 읽기
 		if (ioInfo->recvByte >= 4) { // 헤더 다 읽었음
-			memcpy(((char*)ioInfo->recvBuffer) + ioInfo->recvByte,
-				ioInfo->buffer, bytesTrans);
+			copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
+					((char*) ioInfo->recvBuffer) + ioInfo->recvByte); // Recv Byte 폭발시 오류 지점
 			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
-		}
-		else { // 헤더를 다 못읽었음 경우
+		} else { // 헤더를 다 못읽었음 경우
 			int recv = min(4 - ioInfo->recvByte, bytesTrans);
-			memcpy(((char*)&(ioInfo->bodySize)) + ioInfo->recvByte,
-				ioInfo->buffer, recv); // 헤더부터 채운다
+			copy(ioInfo->buffer, ioInfo->buffer + recv,
+					((char*) &(ioInfo->bodySize)) + ioInfo->recvByte);
 			ioInfo->bodySize = min(ioInfo->bodySize, SIZE - 12);
 			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 			if (ioInfo->recvByte >= 4) {
 				CharPool* charPool = CharPool::getInstance();
 				ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
-				memcpy(((char*)ioInfo->recvBuffer) + 4,
-					((char*)ioInfo->buffer) + recv, bytesTrans - recv); // 이제 헤더는 필요없음 => 이때는 뒤의 데이터만 읽자
+				copy(((char*) ioInfo->buffer) + recv,
+						((char*) ioInfo->buffer) + recv + bytesTrans - recv,
+						((char*) ioInfo->recvBuffer) + 4);
 			}
 		}
 	}
@@ -195,19 +198,15 @@ char* DataCopy(LPPER_IO_DATA ioInfo, int *status) {
 unsigned WINAPI SendMsgThread(void *arg) {
 
 	while (1) {
-		Sleep(1);
-
 		// 보내기 큐를 반환받는다
 		EnterCriticalSection(&cs);
 		queue<INFO_CLIENT> sendQueues = clientQueue.getSendQueue();
 		LeaveCriticalSection(&cs);
 		if (sendQueues.size() != 0) {
-			Sleep(1);
 			queue<INFO_CLIENT> recvQueues;
 			while (!sendQueues.empty()) {
 				INFO_CLIENT info = sendQueues.front();
 				sendQueues.pop();
-
 				SendMsg(info.Sock, info.message.c_str(),
 
 					info.direction);
@@ -228,7 +227,6 @@ unsigned WINAPI SendMsgThread(void *arg) {
 unsigned WINAPI MakeMsgThread(void *arg) {
 
 	while (1) {
-		Sleep(1);
 		// 받기 큐를 반환받는다
 		EnterCriticalSection(&cs);
 		queue<INFO_CLIENT> recvQueues = clientQueue.getRecvQueue();
@@ -238,7 +236,6 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 		string password = "1234";
 
 		if (recvQueues.size() != 0) {
-			Sleep(1);
 			queue<INFO_CLIENT> sendQueues;
 			while (!recvQueues.empty()) {
 				INFO_CLIENT info = recvQueues.front();
@@ -250,7 +247,6 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 					clientQueue.getClientMap().find(info.Sock)->second.id;
 				LeaveCriticalSection(&cs);
 				if (cStatus == STATUS_LOGOUT) {
-					// cout << "STATUS_LOGOUT " << endl;
 					int randNum3 = (rand() % 2);
 					if (randNum3 % 2 == 1) {
 						int randNum1 = (rand() % 2);
@@ -291,13 +287,12 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 					}
 				}
 				else if (cStatus == STATUS_WAITING) {
-					// cout << "STATUS_WAITING " << endl;
 
 					int directionNum = (rand() % 10);
 					if ((directionNum % 2) == 0) { // 0 2 4 6 8 방입장
 
 						int randNum1 = (rand() % 2);
-						int randNum2 = (rand() % 4);
+						int randNum2 = (rand() % 6);
 						string roomName = "";
 						if (randNum1 == 0) {
 							roomName += alpha1.at(randNum2);
@@ -311,7 +306,7 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 					}
 					else if ((directionNum % 3) == 0) { // 3 6 9 방만들기
 						int randNum1 = (rand() % 2);
-						int randNum2 = (rand() % 4);
+						int randNum2 = (rand() % 10);
 						string roomName = "";
 						if (randNum1 == 0) {
 							roomName += alpha1.at(randNum2);
@@ -335,10 +330,9 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 					}
 				}
 				else if (cStatus == STATUS_CHATTIG) {
-					// cout << "STATUS_CHATTIG " << endl;
-					int directionNum = (rand() % 20);
+					int directionNum = (rand() % 40);
 					string msg = "";
-					if (directionNum < 19) {
+					if (directionNum < 39) {
 						int randNum1 = (rand() % 2);
 
 						for (int i = 0; i <= (rand() % 60) + 1; i++) {
@@ -350,8 +344,7 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 								msg += alpha2.at(randNum2);
 							}
 						}
-					}
-					else { // 20번에 한번 나감
+					} else { // 40번에 한번 나감
 						msg = "\\out";
 					}
 					info.direction = -1;
@@ -362,7 +355,6 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 
 			// 다시 넣어줌
 			EnterCriticalSection(&cs);
-			// cout << "MakeMsgThread end " << sendQueues.size() << endl;
 			clientQueue.setRecvQueue(recvQueues);
 			clientQueue.setSendQueue(sendQueues);
 			LeaveCriticalSection(&cs);
@@ -385,12 +377,12 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 			// 데이터 읽기 과정
 			PacketReading(ioInfo, bytesTrans);
 
-			if ((ioInfo->recvByte < ioInfo->totByte)
-				|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
+			if (((ioInfo->recvByte < ioInfo->totByte)
+				|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) && ioInfo->recvByte < SIZE) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 
 				RecvMore(sock, ioInfo); // 패킷 더받기
 			}
-			else {
+			else if (ioInfo->recvByte < SIZE - 12) {
 				int status;
 				char *msg = DataCopy(ioInfo, &status);
 
@@ -398,26 +390,29 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 				// 서버에서 준것으로 갱신
 				if (status == STATUS_LOGOUT || status == STATUS_WAITING
 					|| status == STATUS_CHATTIG) {
-
-					if (clientQueue.getClientMap().find(sock)->second.clientStatus
-						!= status) { // 상태 변경시 콘솔 clear
-						//	system("cls");
-					}
 					EnterCriticalSection(&cs);
+
 					unordered_map<SOCKET, INFO_CLIENT> clientMap =
 						clientQueue.getClientMap();
 					clientMap.find(sock)->second.clientStatus = status; // clear이후 client상태변경 해준다
 					clientQueue.setClientMap(clientMap);
 
-					cout << "sock " << sock << " status " << status << endl;
+					// cout << "sock " << sock << " status " << status << endl;
+					
 					LeaveCriticalSection(&cs);
-					// cout << msg << endl;
-				}
-				else if (status == STATUS_WHISPER) { // 귓속말 상태일때는 클라이언트 상태변화 없음
 					// cout << msg << endl;
 				}
 				CharPool* charPool = CharPool::getInstance();
 				charPool->Free(msg);
+				Recv(sock);
+			}
+			else {
+				// 다 복사 받았으니 할당 해제
+				CharPool* charPool = CharPool::getInstance();
+				charPool->Free(ioInfo->recvBuffer);
+
+				MPool* mp = MPool::getInstance();
+				mp->Free(ioInfo);
 				Recv(sock);
 			}
 		}
@@ -455,6 +450,8 @@ int main() {
 	// Completion Port 생성
 	HANDLE hComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 
+	srand((unsigned int)time(NULL));
+
 	for (DWORD i = 0; i < clientCnt; i++) {
 		SOCKET clientSocket = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP,
 			NULL, 0,
@@ -477,24 +474,21 @@ int main() {
 		INFO_CLIENT info;
 		info.Sock = clientSocket;
 		info.clientStatus = STATUS_LOGOUT;
-		string alpha1 = "abcdefghijklmnopqrstuvwxyz";
-		string alpha2 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-		int j = rand() % 26;
-		if (i / 26 == 0) {
-			info.id = alpha1.at(j);
+		string alpha1 = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		info.id = "";
+		int j = i % 52;
+		for (int k = 0; k <= i / 52; k++) {
+			info.id += alpha1.at(j);
 		}
-		else {
-			info.id = alpha2.at(j);
-		}
-
+		
 		// Recv부터 간다
 		recvQueues.push(info);
 		// userMap 채운다
 		userMap[clientSocket] = info;
-		cout << "sock num " << clientSocket << endl;
+		cout << "sock num " << clientSocket << " id " << info.id << endl;
 		// 각 socket들 Recv 동작으로
 		Recv(clientSocket);
-		Sleep(50);
+		Sleep(5);
 	}
 	// 전체 clientUser
 	clientQueue.setClientMap(userMap);
@@ -503,38 +497,51 @@ int main() {
 	// Send큐는 빈상태로
 	clientQueue.setSendQueue(sendQueues);
 
-	cout << "현재 접속 클라이언트" << clientCnt << endl;
+	cout << "현재 접속 클라이언트 수" << clientCnt << endl;
 
-	HANDLE sendThread, recvThread, makeThread;
+	SYSTEM_INFO sysInfo;
+	GetSystemInfo(&sysInfo);
+	int process = sysInfo.dwNumberOfProcessors;
 
 	// 수신 스레드 동작
 	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다
 	// RecvMsg에서 Recv가 완료되면 동작할 부분이 있다
-	recvThread = (HANDLE)_beginthreadex(NULL, 0, RecvMsgThread,
-		(LPVOID)hComPort, 0,
-		NULL);
+	for (int i = 0; i < process / 2; i++) {
+		 _beginthreadex(NULL, 0, RecvMsgThread,
+			(LPVOID)hComPort, 0,
+			NULL);
+	}
 
-	
-	// 옹작을 만들어줄 스레드 동작
-	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다
-	// RecvMsg에서 Recv가 완료되면 동작할 부분이 있다
-	makeThread = (HANDLE)_beginthreadex(NULL, 0, MakeMsgThread,
-		NULL, 0,
-		NULL);
-	
+	// 동작을 만들어줄 스레드 동작
+	// 만들어진 동작큐를 hComPort SendMsgThread에서 처리하게 된다
+	for (int i = 0; i < 2; i++) {
+		_beginthreadex(NULL, 0, MakeMsgThread,
+			NULL, 0,
+			NULL);
+	}
+
 	// 송신 스레드 동작
 	// Thread안에서 clientSocket으로 Send해줄거니까 인자로 넘겨준다
 	// CP랑 Send는 연결 안되어있음 GetQueuedCompletionStatus에서 Send 완료처리 필요없음
-	sendThread = (HANDLE)_beginthreadex(NULL, 0, SendMsgThread,
-		NULL, 0,
-		NULL);
+	for (int i = 0; i < 2; i++) {
+		_beginthreadex(NULL, 0, SendMsgThread,
+			NULL, 0,
+			NULL);
+	}
 
-	WaitForSingleObject(recvThread, INFINITE);
-	WaitForSingleObject(makeThread, INFINITE);
-	WaitForSingleObject(sendThread, INFINITE);
+	while (true) {
+		int moreClient;
+		int speed;
+
+		cout << " 더만들 클라이언트 수를 입력하세요" << endl;
+		cin >> moreClient;
+
+		cout << " 패킷 보낼 1/1000 초 단위를 입력하세요" << endl;
+		cin >> speed;
+
+	}
 	// 임계영역 Object 반환
 	DeleteCriticalSection(&cs);
-
 	unordered_map<SOCKET, INFO_CLIENT>::iterator iter;
 
 	for (iter = clientQueue.getClientMap().begin();

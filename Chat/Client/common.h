@@ -9,7 +9,7 @@
 #define COMMON_H_
 
 using namespace std;
-#define SIZE 256
+#define SIZE 512
 #define BUF_SIZE 512
 #define NAME_SIZE 20
 
@@ -32,12 +32,12 @@ using namespace std;
 #define USER_OUT 4
 
 // 서버에 올 지시 사항
-#define ROOM_MAKE 6
-#define ROOM_ENTER 7
-#define ROOM_OUT 8
-#define WHISPER 9
-#define ROOM_INFO 10
-#define ROOM_USER_INFO 11
+#define ROOM_MAKE 5
+#define ROOM_ENTER 6
+#define ROOM_OUT 7
+#define WHISPER 8
+#define ROOM_INFO 9
+#define ROOM_USER_INFO 10
 // 로그인 중복 방지
 #define NOW_LOGOUT 0
 #define NOW_LOGIN 1

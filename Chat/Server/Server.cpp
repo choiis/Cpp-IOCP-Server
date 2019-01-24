@@ -56,9 +56,14 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 				int nowStatus = -1;
 				char *msg = businessService->DataCopy(ioInfo, &nowStatus, &direction);
 
+				CRITICAL_SECTION uCs = businessService->getUserCs();
+				// userMap접근을 위한CS
+				EnterCriticalSection(&uCs);
+				int cnt = businessService->getUserMap().count(sock);
+				LeaveCriticalSection(&uCs);
+
 				// DataCopy에서 받은 ioInfo 모두 free
-				if (businessService->getUserMap().find(sock)
-						== businessService->getUserMap().end()) { // 세션값 없음 => 로그인 이전 분기
+				if (cnt == 0) { // 세션값 없음 => 로그인 이전 분기
 						// 로그인 이전 로직 처리
 					businessService->StatusLogout(sock, direction, msg);
 					// Recv는 계속한다
@@ -68,8 +73,10 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 					// 세션값 없음 => 로그인 이전 분기 끝
 				} else { // 세션값 있을때 => 대기방 또는 채팅방 상태
 
+					string userId = businessService->getUserMap().find(sock)->second.userId;
+
 					CRITICAL_SECTION cs = businessService->getUserCs();
-					EnterCriticalSection(&cs);
+					EnterCriticalSection(&cs); //Status를 가져오기 위한 CS
 					int status =
 						businessService->getUserMap().find(sock)->second.status;
 					LeaveCriticalSection(&cs);
@@ -93,6 +100,8 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 			}
 		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
+
+			string userId = businessService->getUserMap().find(sock)->second.userId;
 			CharPool* charPool = CharPool::getInstance();
 
 			charPool->Free(ioInfo->wsaBuf.buf);
@@ -101,6 +110,7 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			mp->Free(ioInfo);
 		} else {
 			// Recv는 계속한다
+			cout << "Else Case " << endl;
 			businessService->BusinessService::getIocpService()->Recv(sock);
 		}
 	}
@@ -130,7 +140,7 @@ int main(int argc, char* argv[]) {
 
 	// CPU 갯수 만큼 스레드 생성
 	// Thread Pool 스레드를 필요한 만큼 만들어 놓고 파괴 안하고 사용
-	for (int i = 0; i < process; i++) {
+	for (int i = 0; i < 2 * process; i++) {
 		// 만들어진 HandleThread를 hComPort CP 오브젝트에 할당한다
 		_beginthreadex(NULL, 0, HandleThread, (LPVOID) hComPort, 0, NULL);
 		// 첫번째는 security관련 NULL 쓰며됨
@@ -173,9 +183,8 @@ int main(int argc, char* argv[]) {
 		SOCKET hClientSock;
 		SOCKADDR_IN clntAdr;
 		int addrLen = sizeof(clntAdr);
-		cout << "accept wait" << endl;
 		hClientSock = accept(hServSock, (SOCKADDR*) &clntAdr, &addrLen);
-
+		 
 		// cout << "Connected client IP " << inet_ntoa(clntAdr.sin_addr) << endl;
 
 		// Completion Port 와 accept한 소켓 연결

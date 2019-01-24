@@ -8,14 +8,14 @@
 #include "CharPool.h"
 // 생성자
 CharPool::CharPool() {
-	data = (char*) malloc(BLOCK_SIZE * 1000);
+	data = (char*)malloc(BLOCK_SIZE * 2000);
 	DWORD i = 0;
-	len = 1000;
+	len = 2000;
+	memset((char*)data, 0, BLOCK_SIZE * 2000);
 	InitializeCriticalSectionAndSpinCount(&cs, 2000);
-	for (i = 0; i < 1000; i++) {
+	for (i = 0; i < 2000; i++) {
 		poolQueue.push(data + (BLOCK_SIZE * i));
 	}
-
 }
 // Singleton Instance
 CharPool* CharPool::instance = nullptr;
@@ -31,12 +31,12 @@ CharPool::~CharPool() {
 char* CharPool::Malloc() {
 	EnterCriticalSection(&cs);
 	if (poolQueue.empty()) { // 더 할당 필요한 경우 len(초기 blocks만큼 추가)
-		data = (char*) realloc(data, (len + len) * BLOCK_SIZE);
-		DWORD i = 0;
-		for (i = 0; i < len; i++) {
-			poolQueue.push(data + (BLOCK_SIZE * (len + i)));
+		char* nextP = data + (BLOCK_SIZE* len);
+		nextP = new char[BLOCK_SIZE* len];
+		memset((char*)nextP, 0, BLOCK_SIZE * len);
+		for (DWORD j = 0; j < len; j++) {
+			poolQueue.push(nextP + (BLOCK_SIZE* j));
 		}
-		len += len;
 	}
 	char* pointer = poolQueue.front();
 	poolQueue.pop();

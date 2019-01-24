@@ -13,7 +13,7 @@
 #include <queue>
 #include "common.h"
 
-#define BLOCK_SIZE 256
+#define BLOCK_SIZE 512
 
 class CharPool {
 private:
@@ -28,6 +28,7 @@ public:
 	// Singleton Instance 를 반환
 	static CharPool* getInstance() {
 		if (instance == nullptr) {
+			cout << "char 메모리풀 2000개 할당!" << endl;
 			instance = new CharPool();
 		}
 		return instance;
