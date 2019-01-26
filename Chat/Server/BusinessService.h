@@ -84,6 +84,10 @@ public:
 	// 패킷 데이터 읽기
 	void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans);
 
+	bool SessionCheck(SOCKET sock);
+
+	int GetStatus(SOCKET sock);
+
 	const unordered_map<string, USER_DATA>& getIdMap() const {
 		return idMap;
 	}

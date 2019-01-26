@@ -47,8 +47,8 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			
 			// 데이터 읽기 과정
 			businessService->PacketReading(ioInfo, bytesTrans);
-			if ((ioInfo->recvByte < ioInfo->totByte)
-					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
+			if (((ioInfo->recvByte < ioInfo->totByte)
+					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) && ioInfo->recvByte <= SIZE ) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 				businessService->BusinessService::getIocpService()->RecvMore(
 						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
 			} else { // 다 받은 후 정상 로직
@@ -56,14 +56,8 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 				int nowStatus = -1;
 				char *msg = businessService->DataCopy(ioInfo, &nowStatus, &direction);
 
-				CRITICAL_SECTION uCs = businessService->getUserCs();
-				// userMap접근을 위한CS
-				EnterCriticalSection(&uCs);
-				int cnt = businessService->getUserMap().count(sock);
-				LeaveCriticalSection(&uCs);
-
 				// DataCopy에서 받은 ioInfo 모두 free
-				if (cnt == 0) { // 세션값 없음 => 로그인 이전 분기
+				if (!businessService->SessionCheck(sock)) { // 세션값 없음 => 로그인 이전 분기
 						// 로그인 이전 로직 처리
 					businessService->StatusLogout(sock, direction, msg);
 					// Recv는 계속한다
@@ -73,13 +67,8 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 					// 세션값 없음 => 로그인 이전 분기 끝
 				} else { // 세션값 있을때 => 대기방 또는 채팅방 상태
 
-					string userId = businessService->getUserMap().find(sock)->second.userId;
-
-					CRITICAL_SECTION cs = businessService->getUserCs();
-					EnterCriticalSection(&cs); //Status를 가져오기 위한 CS
-					int status =
-						businessService->getUserMap().find(sock)->second.status;
-					LeaveCriticalSection(&cs);
+				
+					int status = businessService->BusinessService::GetStatus(sock);
 
 					if (status == STATUS_WAITING ) { // 대기실 케이스
 						// 대기실 처리 함수
@@ -101,7 +90,6 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			}
 		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
 
-			string userId = businessService->getUserMap().find(sock)->second.userId;
 			CharPool* charPool = CharPool::getInstance();
 
 			charPool->Free(ioInfo->wsaBuf.buf);
@@ -110,7 +98,6 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			mp->Free(ioInfo);
 		} else {
 			// Recv는 계속한다
-			cout << "Else Case " << endl;
 			businessService->BusinessService::getIocpService()->Recv(sock);
 		}
 	}

@@ -31,8 +31,7 @@ MPool::~MPool() {
 LPPER_IO_DATA MPool::Malloc() {
 	EnterCriticalSection(&cs);
 	if (poolQueue.empty()) { // 더 할당 필요한 경우 len(초기 blocks만큼 추가)
-		char* nextP = data + (sizeof(PER_IO_DATA)* len);
-		nextP = new char[sizeof(PER_IO_DATA)* len];
+		char* nextP = new char[sizeof(PER_IO_DATA)* len];
 		memset((char*)nextP, 0, sizeof(PER_IO_DATA)* len);
 		for (DWORD j = 0; j < len; j++) {
 			poolQueue.push(nextP + (sizeof(PER_IO_DATA)* j));

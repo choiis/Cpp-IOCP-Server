@@ -594,22 +594,30 @@ namespace Service {
 				copy(((char*)&(ioInfo->bodySize)) + ioInfo->recvByte,
 					((char*)&(ioInfo->bodySize)) + ioInfo->recvByte
 					+ bytesTrans, ioInfo->buffer);
+				ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 			}
 			else {
 				copy(ioInfo->buffer, ioInfo->buffer + 4,
 					(char*)&(ioInfo->bodySize));
-				ioInfo->bodySize = min(ioInfo->bodySize, SIZE - 12);
-				CharPool* charPool = CharPool::getInstance();
-				ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
-				copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
-					((char*)ioInfo->recvBuffer)); // 오류 위치
+				if (ioInfo->bodySize >= 0 && ioInfo->bodySize <= SIZE -12) {
+					CharPool* charPool = CharPool::getInstance();
+					ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+					copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
+						((char*)ioInfo->recvBuffer));
+					ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
+				}
+				else { // 잘못된 bodySize;
+					ioInfo->recvByte = 0;
+					ioInfo->totByte = 0;
+					ioInfo->bodySize = 0;
+				}
 			}
-			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
+			
 		}
 		else { // 더 읽기
 			if (ioInfo->recvByte >= 4) { // 헤더 다 읽었음
 				copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
-					((char*)ioInfo->recvBuffer) + ioInfo->recvByte);
+					((char*)ioInfo->recvBuffer) + ioInfo->recvByte); // 오류지점
 				ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 			}
 			else { // 헤더를 다 못읽었음 경우
@@ -631,6 +639,27 @@ namespace Service {
 		if (ioInfo->totByte == 0 && ioInfo->recvByte >= 4) { // 헤더를 다 읽어야 토탈 바이트 수를 알 수 있다
 			ioInfo->totByte = min(ioInfo->bodySize + 12, SIZE);
 		}
+	}
+
+	bool BusinessService::SessionCheck(SOCKET sock) {
+		// userMap접근을 위한CS
+		EnterCriticalSection(&this->userCs);
+		int cnt = userMap.count(sock);
+		LeaveCriticalSection(&this->userCs);
+		
+		if (cnt > 0) {
+			return true;
+		}
+		else{
+			return false;
+		}
+	}
+
+	int BusinessService::GetStatus(SOCKET sock) {
+		EnterCriticalSection(&this->userCs);
+		int status = userMap.find(sock)->second.status;
+		LeaveCriticalSection(&this->userCs);
+		return status;
 	}
 
 	IocpService::IocpService* BusinessService::getIocpService() {

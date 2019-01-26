@@ -43,7 +43,7 @@ private:
 	queue<INFO_CLIENT> recvQueue;
 	queue<INFO_CLIENT> sendQueue;
 public:
-	const queue<INFO_CLIENT> getRecvQueue() const {
+	const queue<INFO_CLIENT>& getRecvQueue() const {
 		return recvQueue;
 	}
 
@@ -51,7 +51,7 @@ public:
 		this->recvQueue = recvQueue;
 	}
 
-	const queue<INFO_CLIENT> getSendQueue() const {
+	const queue<INFO_CLIENT>& getSendQueue() const {
 		return sendQueue;
 	}
 
@@ -59,7 +59,7 @@ public:
 		this->sendQueue = sendQueue;
 	}
 
-	unordered_map<SOCKET, INFO_CLIENT> getClientMap() {
+	unordered_map<SOCKET, INFO_CLIENT>& getClientMap() {
 		return clientMap;
 	}
 
@@ -133,19 +133,26 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 	// IO 완료후 동작 부분
 	if (READ == ioInfo->serverMode) {
 		if (bytesTrans < 4) { // 헤더를 다 못 읽어온 상황
-			copy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
-					((char*) &(ioInfo->bodySize)) + ioInfo->recvByte
-							+ bytesTrans, ioInfo->buffer);
+			copy(((char*)&(ioInfo->bodySize)) + ioInfo->recvByte,
+				((char*)&(ioInfo->bodySize)) + ioInfo->recvByte
+				+ bytesTrans, ioInfo->buffer);
 			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
-		} else {
+		}
+		else {
 			copy(ioInfo->buffer, ioInfo->buffer + 4,
-					(char*) &(ioInfo->bodySize));
-			ioInfo->bodySize = min(ioInfo->bodySize, SIZE - 12);
-			CharPool* charPool = CharPool::getInstance();
-			ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
-			copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
-				((char*)ioInfo->recvBuffer));
-			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신	
+				(char*)&(ioInfo->bodySize));
+			if (ioInfo->bodySize >= 0 && ioInfo->bodySize <= SIZE - 12) {
+				CharPool* charPool = CharPool::getInstance();
+				ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+				copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
+					((char*)ioInfo->recvBuffer));
+				ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
+			}
+			else { // 잘못된 bodySize;
+				ioInfo->recvByte = 0;
+				ioInfo->totByte = 0;
+				ioInfo->bodySize = 0;
+			}
 		}
 	} else { // 더 읽기
 		if (ioInfo->recvByte >= 4) { // 헤더 다 읽었음
@@ -292,7 +299,7 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 					if ((directionNum % 2) == 0) { // 0 2 4 6 8 방입장
 
 						int randNum1 = (rand() % 2);
-						int randNum2 = (rand() % 6);
+						int randNum2 = (rand() % 10);
 						string roomName = "";
 						if (randNum1 == 0) {
 							roomName += alpha1.at(randNum2);
@@ -370,10 +377,16 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 	LPPER_IO_DATA ioInfo;
 
 	while (1) {
-		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD)&sock,
+		bool success = GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD)&sock,
 			(LPOVERLAPPED*)&ioInfo, INFINITE);
 
-		if (READ_MORE == ioInfo->serverMode || READ == ioInfo->serverMode) {
+		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
+			// 서버 콘솔 강제종료 처리
+			cout << "서버 종료" << endl;
+			closesocket(sock);
+			MPool* mp = MPool::getInstance();
+			mp->Free(ioInfo);
+		}  else if (READ_MORE == ioInfo->serverMode || READ == ioInfo->serverMode) {
 			// 데이터 읽기 과정
 			PacketReading(ioInfo, bytesTrans);
 
@@ -397,10 +410,8 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 					clientMap.find(sock)->second.clientStatus = status; // clear이후 client상태변경 해준다
 					clientQueue.setClientMap(clientMap);
 
-					// cout << "sock " << sock << " status " << status << endl;
-					
 					LeaveCriticalSection(&cs);
-					// cout << msg << endl;
+				
 				}
 				CharPool* charPool = CharPool::getInstance();
 				charPool->Free(msg);
@@ -488,7 +499,7 @@ int main() {
 		cout << "sock num " << clientSocket << " id " << info.id << endl;
 		// 각 socket들 Recv 동작으로
 		Recv(clientSocket);
-		Sleep(5);
+		
 	}
 	// 전체 clientUser
 	clientQueue.setClientMap(userMap);
@@ -506,7 +517,7 @@ int main() {
 	// 수신 스레드 동작
 	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다
 	// RecvMsg에서 Recv가 완료되면 동작할 부분이 있다
-	for (int i = 0; i < process / 2; i++) {
+	for (int i = 0; i < process ; i++) {
 		 _beginthreadex(NULL, 0, RecvMsgThread,
 			(LPVOID)hComPort, 0,
 			NULL);
@@ -514,7 +525,7 @@ int main() {
 
 	// 동작을 만들어줄 스레드 동작
 	// 만들어진 동작큐를 hComPort SendMsgThread에서 처리하게 된다
-	for (int i = 0; i < 2; i++) {
+	for (int i = 0; i < process / 2; i++) {
 		_beginthreadex(NULL, 0, MakeMsgThread,
 			NULL, 0,
 			NULL);
@@ -523,7 +534,7 @@ int main() {
 	// 송신 스레드 동작
 	// Thread안에서 clientSocket으로 Send해줄거니까 인자로 넘겨준다
 	// CP랑 Send는 연결 안되어있음 GetQueuedCompletionStatus에서 Send 완료처리 필요없음
-	for (int i = 0; i < 2; i++) {
+	for (int i = 0; i < process / 2; i++) {
 		_beginthreadex(NULL, 0, SendMsgThread,
 			NULL, 0,
 			NULL);
@@ -533,11 +544,11 @@ int main() {
 		int moreClient;
 		int speed;
 
-		cout << " 더만들 클라이언트 수를 입력하세요" << endl;
+	//	cout << " 더만들 클라이언트 수를 입력하세요" << endl;
 		cin >> moreClient;
 
-		cout << " 패킷 보낼 1/1000 초 단위를 입력하세요" << endl;
-		cin >> speed;
+	//	cout << " 패킷 보낼 1/1000 초 단위를 입력하세요" << endl;
+	//	cin >> speed;
 
 	}
 	// 임계영역 Object 반환

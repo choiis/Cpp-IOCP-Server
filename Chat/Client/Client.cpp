@@ -244,16 +244,23 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 			copy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
 					((char*) &(ioInfo->bodySize)) + ioInfo->recvByte
 							+ bytesTrans, ioInfo->buffer);
+			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 		} else {
 			copy(ioInfo->buffer, ioInfo->buffer + 4,
-					(char*) &(ioInfo->bodySize));
-			ioInfo->bodySize = min(ioInfo->bodySize, SIZE - 12);
-			CharPool* charPool = CharPool::getInstance();
-			ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
-			copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
-					((char*) ioInfo->recvBuffer));
+				(char*)&(ioInfo->bodySize));
+			if (ioInfo->bodySize >= 0 && ioInfo->bodySize <= SIZE - 12) {
+				CharPool* charPool = CharPool::getInstance();
+				ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+				copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
+					((char*)ioInfo->recvBuffer));
+				ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
+			}
+			else { // 잘못된 bodySize;
+				ioInfo->recvByte = 0;
+				ioInfo->totByte = 0;
+				ioInfo->bodySize = 0;
+			}
 		}
-		ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 	} else { // 더 읽기
 		if (ioInfo->recvByte >= 4) { // 헤더 다 읽었음
 			copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
@@ -310,20 +317,27 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 	LPPER_IO_DATA ioInfo;
 
 	while (1) {
-		GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD) &sock,
+		bool success = GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD)&sock,
 				(LPOVERLAPPED*) &ioInfo, INFINITE);
 
-		if (READ_MORE == ioInfo->serverMode || READ == ioInfo->serverMode) {
+		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
+			// 서버 콘솔 강제종료 처리
+			cout << "서버 종료" << endl;
+			closesocket(sock);
+			MPool* mp = MPool::getInstance();
+			mp->Free(ioInfo);
+		}
+		else if (READ_MORE == ioInfo->serverMode || READ == ioInfo->serverMode) {
 
 			// 데이터 읽기 과정
 			PacketReading(ioInfo, bytesTrans);
 
 			if (((ioInfo->recvByte < ioInfo->totByte)
-				|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) && ioInfo->recvByte < SIZE) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
+				|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) && ioInfo->recvByte <= SIZE) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 
 				RecvMore(sock, ioInfo); // 패킷 더받기
 			}
-			else if (ioInfo->recvByte < SIZE - 12) {
+			else  {
 				int status;
 				char *msg = DataCopy(ioInfo, &status);
 
@@ -334,6 +348,7 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 					if (clientStatus != status) { // 상태 변경시 콘솔 clear
 						system("cls");
 					}
+					
 					clientStatus = status; // clear이후 client상태변경 해준다
 					cout << msg << endl;
 				} else if (status == STATUS_WHISPER) { // 귓속말 상태일때는 클라이언트 상태변화 없음
@@ -343,15 +358,7 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 				charPool->Free(msg);
 				Recv(sock);
 			}
-			else {
-				// 다 복사 받았으니 할당 해제
-				CharPool* charPool = CharPool::getInstance();
-				charPool->Free(ioInfo->recvBuffer);
-
-				MPool* mp = MPool::getInstance();
-				mp->Free(ioInfo);
-				Recv(sock);
-			}
+			
 		} else if (WRITE == ioInfo->serverMode) {
 			MPool* mp = MPool::getInstance();
 			CharPool* charPool = CharPool::getInstance();
