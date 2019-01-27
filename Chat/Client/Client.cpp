@@ -41,8 +41,8 @@ void RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo) {
 	DWORD recvBytes = 0;
 	DWORD flags = 0;
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-	ioInfo->wsaBuf.len = SIZE;
-	memset(ioInfo->buffer, 0, SIZE);
+	ioInfo->wsaBuf.len = BUF_SIZE;
+	memset(ioInfo->buffer, 0, BUF_SIZE);
 	ioInfo->wsaBuf.buf = ioInfo->buffer;
 	ioInfo->serverMode = READ_MORE; // GetQueuedCompletionStatus 이후 분기가 Recv로 갈수 있게
 
@@ -59,7 +59,7 @@ void Recv(SOCKET sock) {
 	LPPER_IO_DATA ioInfo = mp->Malloc();
 
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-	ioInfo->wsaBuf.len = SIZE;
+	ioInfo->wsaBuf.len = BUF_SIZE;
 	ioInfo->wsaBuf.buf = ioInfo->buffer;
 	ioInfo->serverMode = READ; // GetQueuedCompletionStatus 이후 분기가 Recv로 갈수 있게
 	ioInfo->recvByte = 0;
@@ -78,9 +78,9 @@ void SendMsg(SOCKET clientSock, const char* msg, int status, int direction) {
 
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 
-	int len = strlen(msg) + 1;
+	int len = min((int) strlen(msg) + 1, BUF_SIZE - 12); // 최대 보낼수 있는 내용 500Byte
 	CharPool* charPool = CharPool::getInstance();
-	char* packet = charPool->Malloc(); // char[len + (3 * sizeof(int))];
+	char* packet = charPool->Malloc(); // 512 Byte까지 읽기 가능
 
 	copy((char*) &len, (char*) &len + 4, packet); // dataSize
 	copy((char*) &status, (char*) &status + 4, packet + 4);  // status
@@ -244,18 +244,17 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 			copy(((char*) &(ioInfo->bodySize)) + ioInfo->recvByte,
 					((char*) &(ioInfo->bodySize)) + ioInfo->recvByte
 							+ bytesTrans, ioInfo->buffer);
-			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
+			ioInfo->recvByte += bytesTrans; // 지금까지 받은 바이트 수 갱신
 		} else {
 			copy(ioInfo->buffer, ioInfo->buffer + 4,
-				(char*)&(ioInfo->bodySize));
-			if (ioInfo->bodySize >= 0 && ioInfo->bodySize <= SIZE - 12) {
+					(char*) &(ioInfo->bodySize));
+			if (ioInfo->bodySize >= 0 && ioInfo->bodySize <= BUF_SIZE - 12) { // Size 정상
 				CharPool* charPool = CharPool::getInstance();
-				ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+				ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte까지 읽기 가능
 				copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
-					((char*)ioInfo->recvBuffer));
-				ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
-			}
-			else { // 잘못된 bodySize;
+						((char*) ioInfo->recvBuffer));
+				ioInfo->recvByte += bytesTrans; // 지금까지 받은 바이트 수 갱신
+			} else { // 잘못된 bodySize; => 더읽기 필요
 				ioInfo->recvByte = 0;
 				ioInfo->totByte = 0;
 				ioInfo->bodySize = 0;
@@ -270,11 +269,11 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 			int recv = min(4 - ioInfo->recvByte, bytesTrans);
 			copy(ioInfo->buffer, ioInfo->buffer + recv,
 					((char*) &(ioInfo->bodySize)) + ioInfo->recvByte);
-			ioInfo->bodySize = min(ioInfo->bodySize, SIZE - 12);
+			ioInfo->bodySize = min(ioInfo->bodySize, (DWORD) BUF_SIZE - 12);
 			ioInfo->recvByte += bytesTrans; // 지금까지 받은 데이터 수 갱신
 			if (ioInfo->recvByte >= 4) {
 				CharPool* charPool = CharPool::getInstance();
-				ioInfo->recvBuffer = charPool->Malloc(); // char[ioInfo->bodySize + 12]; // BodySize만큼 동적 할당
+				ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte까지 읽기 가능
 				copy(((char*) ioInfo->buffer) + recv,
 						((char*) ioInfo->buffer) + recv + bytesTrans - recv,
 						((char*) ioInfo->recvBuffer) + 4);
@@ -283,7 +282,7 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 	}
 
 	if (ioInfo->totByte == 0 && ioInfo->recvByte >= 4) { // 헤더를 다 읽어야 토탈 바이트 수를 알 수 있다
-		ioInfo->totByte = min(ioInfo->bodySize + 12, SIZE);
+		ioInfo->totByte = min(ioInfo->bodySize + 12, (DWORD) BUF_SIZE);
 	}
 }
 
@@ -291,14 +290,12 @@ void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans) {
 char* DataCopy(LPPER_IO_DATA ioInfo, int *status) {
 	copy(((char*) ioInfo->recvBuffer) + 4, ((char*) ioInfo->recvBuffer) + 8,
 			(char*) status);
-//	copy(((char*) ioInfo->recvBuffer) + 8, ((char*) ioInfo->recvBuffer) + 12,
-//			(char*) direction);
-
 	CharPool* charPool = CharPool::getInstance();
-	char* msg = charPool->Malloc(); // char[ioInfo->bodySize];	// Msg
+	char* msg = charPool->Malloc(); // 512 Byte까지 카피 가능
 
 	copy(((char*) ioInfo->recvBuffer) + 12,
-			((char*) ioInfo->recvBuffer) + 12 + ioInfo->bodySize, msg);
+			((char*) ioInfo->recvBuffer) + 12
+					+ min(ioInfo->bodySize, (DWORD) BUF_SIZE), msg); //에러위치
 
 	// 다 복사 받았으니 할당 해제
 	charPool->Free(ioInfo->recvBuffer);
@@ -317,8 +314,8 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 	LPPER_IO_DATA ioInfo;
 
 	while (1) {
-		bool success = GetQueuedCompletionStatus(hComPort, &bytesTrans, (LPDWORD)&sock,
-				(LPOVERLAPPED*) &ioInfo, INFINITE);
+		bool success = GetQueuedCompletionStatus(hComPort, &bytesTrans,
+				(LPDWORD) &sock, (LPOVERLAPPED*) &ioInfo, INFINITE);
 
 		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
 			// 서버 콘솔 강제종료 처리
@@ -326,18 +323,18 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 			closesocket(sock);
 			MPool* mp = MPool::getInstance();
 			mp->Free(ioInfo);
-		}
-		else if (READ_MORE == ioInfo->serverMode || READ == ioInfo->serverMode) {
+		} else if (READ_MORE == ioInfo->serverMode
+				|| READ == ioInfo->serverMode) {
 
 			// 데이터 읽기 과정
 			PacketReading(ioInfo, bytesTrans);
 
 			if (((ioInfo->recvByte < ioInfo->totByte)
-				|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) && ioInfo->recvByte <= SIZE) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
+					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0))
+					&& ioInfo->recvByte <= BUF_SIZE) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 
 				RecvMore(sock, ioInfo); // 패킷 더받기
-			}
-			else  {
+			} else {
 				int status;
 				char *msg = DataCopy(ioInfo, &status);
 
@@ -348,7 +345,7 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 					if (clientStatus != status) { // 상태 변경시 콘솔 clear
 						system("cls");
 					}
-					
+
 					clientStatus = status; // clear이후 client상태변경 해준다
 					cout << msg << endl;
 				} else if (status == STATUS_WHISPER) { // 귓속말 상태일때는 클라이언트 상태변화 없음
@@ -358,7 +355,7 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 				charPool->Free(msg);
 				Recv(sock);
 			}
-			
+
 		} else if (WRITE == ioInfo->serverMode) {
 			MPool* mp = MPool::getInstance();
 			CharPool* charPool = CharPool::getInstance();

@@ -42,23 +42,26 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 			MPool* mp = MPool::getInstance();
 			mp->Free(ioInfo);
-		} else if ((READ == ioInfo->serverMode
-				|| READ_MORE == ioInfo->serverMode) && bytesTrans != SIZE) { // Recv 끝난경우
-			
-			// 데이터 읽기 과정
+		} else if (READ == ioInfo->serverMode
+				|| READ_MORE == ioInfo->serverMode) { // Recv 가 기본 동작
+
+				// 데이터 읽기 과정
 			businessService->PacketReading(ioInfo, bytesTrans);
 			if (((ioInfo->recvByte < ioInfo->totByte)
-					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0)) && ioInfo->recvByte <= SIZE ) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
+					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0))
+					&& ioInfo->recvByte <= BUF_SIZE) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 				businessService->BusinessService::getIocpService()->RecvMore(
 						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
 			} else { // 다 받은 후 정상 로직
 				int direction = -1;
 				int nowStatus = -1;
-				char *msg = businessService->DataCopy(ioInfo, &nowStatus, &direction);
+				// DataCopy내에서 사용 메모리 전부 반환
+				char *msg = businessService->DataCopy(ioInfo, &nowStatus,
+						&direction);
 
 				// DataCopy에서 받은 ioInfo 모두 free
 				if (!businessService->SessionCheck(sock)) { // 세션값 없음 => 로그인 이전 분기
-						// 로그인 이전 로직 처리
+					// 로그인 이전 로직 처리
 					businessService->StatusLogout(sock, direction, msg);
 					// Recv는 계속한다
 
@@ -67,17 +70,16 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 					// 세션값 없음 => 로그인 이전 분기 끝
 				} else { // 세션값 있을때 => 대기방 또는 채팅방 상태
 
-				
-					int status = businessService->BusinessService::GetStatus(sock);
+					int status = businessService->BusinessService::GetStatus(
+							sock);
 
-					if (status == STATUS_WAITING ) { // 대기실 케이스
+					if (status == STATUS_WAITING) { // 대기실 케이스
 						// 대기실 처리 함수
 						businessService->StatusWait(sock, status, direction,
 								msg);
-					}
-					else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
+					} else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
 						// 채팅방 처리 함수
-						
+
 						businessService->StatusChat(sock, status, direction,
 								msg);
 					}
@@ -171,7 +173,7 @@ int main(int argc, char* argv[]) {
 		SOCKADDR_IN clntAdr;
 		int addrLen = sizeof(clntAdr);
 		hClientSock = accept(hServSock, (SOCKADDR*) &clntAdr, &addrLen);
-		 
+
 		// cout << "Connected client IP " << inet_ntoa(clntAdr.sin_addr) << endl;
 
 		// Completion Port 와 accept한 소켓 연결
