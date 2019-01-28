@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <winsock2.h>
+#include <windows.h>
 #include <process.h>
 #include <regex>
 #include "common.h"
@@ -344,6 +345,21 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 						|| status == STATUS_CHATTIG) {
 					if (clientStatus != status) { // 상태 변경시 콘솔 clear
 						system("cls");
+						switch (status) {
+						case STATUS_LOGOUT:
+							SetConsoleTextAttribute(
+									GetStdHandle( STD_OUTPUT_HANDLE), 10);
+							break;
+						case STATUS_WAITING:
+							SetConsoleTextAttribute(
+									GetStdHandle( STD_OUTPUT_HANDLE), 9);
+							break;
+						case STATUS_CHATTIG:
+							SetConsoleTextAttribute(
+									GetStdHandle( STD_OUTPUT_HANDLE), 14);
+							break;
+						}
+
 					}
 
 					clientStatus = status; // clear이후 client상태변경 해준다
@@ -387,6 +403,8 @@ int main() {
 	memset(&servAddr, 0, sizeof(servAddr));
 	servAddr.sin_family = PF_INET;
 	servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+	SetConsoleTextAttribute(GetStdHandle( STD_OUTPUT_HANDLE), 12);
 	while (1) {
 
 		cout << "포트번호를 입력해 주세요 :";

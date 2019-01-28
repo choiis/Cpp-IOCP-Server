@@ -109,5 +109,21 @@ void IocpService::Recv(SOCKET sock) {
 			NULL);
 }
 
+string IocpService::GetNowTime() {
+	string str;
+	char date[20];
+	struct timeb itb;
+	struct tm *lt;
+	ftime(&itb);
+	lt = localtime(&itb.time);
+	// format : YYMMDDhhmmssuuuuuu
+	sprintf(date, "%04d%02d%02d%02d%02d%02d%03d", lt->tm_year + 1900,
+			lt->tm_mon + 1, lt->tm_mday, lt->tm_hour, lt->tm_min, lt->tm_sec,
+			itb.millitm);
+	str = string(date);
+	return str;
+}
+
+
 }
 /* namespace IocpService */

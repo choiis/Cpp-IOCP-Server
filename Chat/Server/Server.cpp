@@ -99,6 +99,13 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 
 			mp->Free(ioInfo);
 		} else {
+
+			CharPool* charPool = CharPool::getInstance();
+
+			charPool->Free(ioInfo->wsaBuf.buf);
+			MPool* mp = MPool::getInstance();
+
+			mp->Free(ioInfo);
 			// Recv는 계속한다
 			businessService->BusinessService::getIocpService()->Recv(sock);
 		}

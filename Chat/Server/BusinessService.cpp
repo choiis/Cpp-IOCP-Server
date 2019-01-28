@@ -18,9 +18,13 @@ BusinessService::BusinessService() {
 	InitializeCriticalSectionAndSpinCount(&roomCs, 2000);
 
 	iocpService = new IocpService::IocpService();
+	
+	dao = new Dao();
 }
 
 BusinessService::~BusinessService() {
+
+	delete dao;
 
 	delete iocpService;
 	// 임계영역 Object 반환
@@ -33,30 +37,35 @@ BusinessService::~BusinessService() {
 
 // 초기 로그인
 // 세션정보 추가
-void BusinessService::InitUser(const char *id, SOCKET sock) {
+void BusinessService::InitUser(const char *id, SOCKET sock, const char* nickName) {
 
 	string msg;
-	char name[NAME_SIZE];
-
-	strncpy(name, idMap.find(id)->second.nickname, NAME_SIZE);
 
 	PER_HANDLE_DATA userInfo;
-	cout << "START user : " << name << endl;
+	cout << "START user : " << nickName << endl;
 	// 유저의 상태 정보 초기화
 	userInfo.status = STATUS_WAITING;
 
 	strncpy(userInfo.userId, id, NAME_SIZE);
-	strncpy(userInfo.userName, name, NAME_SIZE);
 	strncpy(userInfo.roomName, "", NAME_SIZE);
+	strncpy(userInfo.userName, nickName, NAME_SIZE);
 
 	EnterCriticalSection(&userCs);
 	// 세션정보 insert
 	this->userMap[sock] = userInfo;
 	cout << "현재 접속 인원 수 : " << userMap.size() << endl;
 	LeaveCriticalSection(&userCs);
+	Vo vo;
+	vo.setUserId(userInfo.userId);
+	vo.setNickName(userInfo.userName);
 
-	// id의 key값은 유저 이름이 아니라 아이디!!
-	idMap.find(id)->second.logMode = NOW_LOGIN;
+	dao->InsertLogin(vo); // 로그인 DB에 기록
+	dao->UpdateUser(vo); // 최근 로그인기록 업데이트
+
+	// 로그인 계정 insert 중복로그인 방지에 쓰인다
+	EnterCriticalSection(&idCs);
+	idSet.insert(id);
+	LeaveCriticalSection(&idCs);
 
 	msg = "입장을 환영합니다!\n";
 	msg.append(waitRoomMessage);
@@ -81,8 +90,10 @@ void BusinessService::ClientExit(SOCKET sock) {
 			NAME_SIZE);
 			strncpy(name, userMap.find(sock)->second.userName, NAME_SIZE);
 			strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
-			// 로그인 상태 원상복구
-			idMap.find(id)->second.logMode = NOW_LOGOUT;
+			// 로그인 Set에서 out
+			EnterCriticalSection(&idCs);
+			idSet.erase(id);
+			LeaveCriticalSection(&idCs);
 
 			// 방이름 임시 저장
 			if (strcmp(roomName, "") != 0) { // 방에 접속중인 경우
@@ -148,7 +159,6 @@ void BusinessService::StatusLogout(SOCKET sock, int direction, char *message) {
 
 	if (direction == USER_MAKE) { // 1번 계정생성
 
-		USER_DATA userData;
 		char *sArr[3] = { NULL, };
 		char *ptr = strtok(message, "\\"); // 공백 문자열을 기준으로 문자열을 자름
 		int i = 0;
@@ -160,23 +170,26 @@ void BusinessService::StatusLogout(SOCKET sock, int direction, char *message) {
 		}
 		// 유효성 검증 필요
 		if (sArr[0] != NULL && sArr[1] != NULL && sArr[2] != NULL) {
-			EnterCriticalSection(&idCs); // 동시적으로 같은 ID 입력 방지
-			if (idMap.find(sArr[0]) == idMap.end()) { // ID 중복체크
+			
+			Vo vo;
+			vo.setUserId(sArr[0]);
+			vo = dao->selectUser(vo);
 
-				userData.password = string(sArr[1]);
-				strncpy(userData.nickname, sArr[2], NAME_SIZE);
-				userData.logMode = NOW_LOGOUT;
+			if (strcmp(vo.getUserId(), "") == 0) { // ID 중복체크 => 계정 없음
 
-				idMap[string(sArr[0])] = userData; // Insert
+				vo.setUserId(sArr[0]);
+				vo.setPassword(sArr[1]);
+				vo.setNickName(sArr[2]);
 
-				LeaveCriticalSection(&idCs); // Insert 후 Lock 해제
+				dao->InsertUser(vo); 
+
 				msg.append(sArr[0]);
-				msg.append(" 계정 생성 완료!\n");
+				msg.append("계정 생성 완료!\n");
 				msg.append(loginBeforeMessage);
 
 				iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
 			} else { // ID중복있음
-				LeaveCriticalSection(&idCs); // Case Lock 해제
+
 				msg.append("중복된 아이디가 있습니다!\n");
 				msg.append(loginBeforeMessage);
 
@@ -196,28 +209,33 @@ void BusinessService::StatusLogout(SOCKET sock, int direction, char *message) {
 			ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
 		}
 		if (sArr[0] != NULL && sArr[1] != NULL) {
-			EnterCriticalSection(&idCs);
-			if (idMap.find(sArr[0]) == idMap.end()) { // 계정 없음
-				LeaveCriticalSection(&idCs); // Case Lock 해제
+			
+			Vo vo;
+			vo.setUserId(sArr[0]);
+			vo = dao->selectUser(vo);
+
+			if (strcmp(vo.getUserId() , "") == 0) { // 계정 없음
+
 				msg.append("없는 계정입니다 아이디를 확인하세요!\n");
 				msg.append(loginBeforeMessage);
 
 				iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
-			} else if (idMap.find(sArr[0])->second.password.compare(
-					string(sArr[1])) == 0) { // 비밀번호 일치
+			} else if (	strcmp(vo.getPassword(), sArr[1]) == 0	) { // 비밀번호 일치
+				EnterCriticalSection(&idCs);
+				unordered_set<string>::const_iterator it = idSet.find(sArr[0]);
 				LeaveCriticalSection(&idCs); // Case Lock 해제
-				if (idMap.find(sArr[0])->second.logMode == NOW_LOGIN) { // 중복로그인 유효성 검사
+
+				if (it != idSet.end()) { // 중복로그인 유효성 검사
 
 					msg.append("중복 로그인은 안됩니다!\n");
 					msg.append(loginBeforeMessage);
-
 					iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
 				} else { // 중복로그인 X
-					InitUser(sArr[0], sock); // 세션정보 저장
+					InitUser(sArr[0], sock , vo.getNickName()); // 세션정보 저장
 				}
 
 			} else { // 비밀번호 틀림
-				LeaveCriticalSection(&idCs); // Case Lock 해제
+
 				msg.append("비밀번호 틀림!\n");
 				msg.append(loginBeforeMessage);
 
@@ -228,20 +246,7 @@ void BusinessService::StatusLogout(SOCKET sock, int direction, char *message) {
 	} else if (direction == USER_LIST) { // 유저들 정보 요청
 
 		string userList = "아이디 정보 리스트";
-		if (idMap.size() == 0) {
-			userList += " 없음";
-		} else {
-			EnterCriticalSection(&idCs);
-			unordered_map<string, USER_DATA> idCopyMap = idMap;
-			LeaveCriticalSection(&idCs);
-
-			// 동기화 없이 깊은복사
-			unordered_map<string, USER_DATA>::const_iterator iter;
-			for (iter = idCopyMap.begin(); iter != idCopyMap.end(); ++iter) {
-				userList += "\n";
-				userList += (iter->first).c_str();
-			}
-		}
+		// 추가 쿼리 필요
 		iocpService->SendToOneMsg(userList.c_str(), sock, STATUS_LOGOUT);
 	} else { // 그외 명령어 입력
 		string sendMsg = errorMessage;
@@ -441,14 +446,13 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 
 	} else if (msg.compare("6") == 0) { // 로그아웃
 
+		EnterCriticalSection(&idCs);
+		idSet.erase(userMap.find(sock)->second.userId); // 로그인 셋에서 제외
+		LeaveCriticalSection(&idCs);
+
 		EnterCriticalSection(&userCs);
-		string userId = idMap.find(userMap.find(sock)->second.userId)->first;
 		userMap.erase(sock); // 접속 소켓 정보 삭제
 		LeaveCriticalSection(&userCs);
-
-		EnterCriticalSection(&idCs);
-		idMap.find(userId)->second.logMode = NOW_LOGOUT;
-		LeaveCriticalSection(&idCs);
 
 		string sendMsg = loginBeforeMessage;
 
@@ -460,6 +464,13 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 
 		iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_WAITING);
 	}
+
+	Vo vo;
+	vo.setNickName(name.c_str());
+	vo.setMsg(message);
+	vo.setDirection(direction);
+	vo.setStatus(status);
+	dao->InsertDirection(vo); // 지시사항 DB에 기록
 
 	CharPool* charPool = CharPool::getInstance();
 	charPool->Free(message);
@@ -519,10 +530,24 @@ void BusinessService::StatusChat(SOCKET sock, int status, int direction,
 		sendMsg = name;
 		sendMsg += " : ";
 		sendMsg += msg;
+
+		char roomName[NAME_SIZE];
+
 		EnterCriticalSection(&roomCs);
+		EnterCriticalSection(&userCs);
 		unordered_map<string, ROOM_DATA>::iterator it = roomMap.find(
 				userMap.find(sock)->second.roomName);
+		strncpy(roomName, userMap.find(sock)->second.roomName, NAME_SIZE);
+		LeaveCriticalSection(&userCs);
 		LeaveCriticalSection(&roomCs);
+
+		Vo vo;
+		vo.setNickName(name.c_str());
+		vo.setRoomName(roomName);
+		vo.setMsg(msg.c_str());
+		vo.setDirection(0);
+		vo.setStatus(0);
+		dao->InsertChatting(vo); // 채팅 메세지 DB에 기록
 
 		if (it != roomMap.end()) { // null 검사
 			iocpService->SendToRoomMsg(sendMsg.c_str(), it->second.userList,

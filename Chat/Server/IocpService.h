@@ -12,6 +12,8 @@
 #include <unordered_map>
 #include <algorithm>
 #include <list>
+#include <sys/timeb.h>
+#include <time.h>
 #include "common.h"
 #include "MPool.h"
 #include "CharPool.h"
@@ -33,6 +35,8 @@ public:
 
 // Recv 공통함수
 	void Recv(SOCKET sock);
+
+	string GetNowTime();
 };
 /* namespace IocpService */
 }
