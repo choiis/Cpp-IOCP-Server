@@ -9,8 +9,7 @@
 #define COMMON_H_
 
 using namespace std;
-
-#define BUF_SIZE 512
+#define BUF_SIZE 4096
 #define NAME_SIZE 20
 
 // CP가 Recv 받을때 READ Send 받을때 WRITE
@@ -53,10 +52,18 @@ typedef struct { // buffer info
 	WSABUF wsaBuf;
 	char buffer[BUF_SIZE];  // 512Byte
 	int serverMode;
-	DWORD recvByte; // 지금까지 받은 바이트를 알려줌
-	DWORD totByte; //전체 받을 바이트를 알려줌
-	DWORD bodySize; // 패킷의 body 사이즈
+	short recvByte; // 지금까지 받은 바이트를 알려줌
+	short totByte; //전체 받을 바이트를 알려줌
+	short bodySize; // 패킷의 body 사이즈
 	char *recvBuffer;
 } PER_IO_DATA, *LPPER_IO_DATA;
 
+// JOB Queue에 대한 구조체
+typedef struct { // buffer info
+	SOCKET socket;
+	int direction;
+	int nowStatus;
+	string msg;
+	int job;
+} JOB_DATA, *P_JOB_DATA;
 #endif /* COMMON_H_ */

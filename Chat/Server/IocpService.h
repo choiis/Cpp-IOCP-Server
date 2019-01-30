@@ -36,7 +36,6 @@ public:
 // Recv 공통함수
 	void Recv(SOCKET sock);
 
-	string GetNowTime();
 };
 /* namespace IocpService */
 }

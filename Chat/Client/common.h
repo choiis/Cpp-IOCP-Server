@@ -10,7 +10,7 @@
 
 using namespace std;
 
-#define BUF_SIZE 512
+#define BUF_SIZE 1024
 #define NAME_SIZE 20
 
 // CP가 Recv 받을때 READ Send 받을때 WRITE

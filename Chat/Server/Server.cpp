@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <process.h>
 #include <winsock2.h>
-
+#include <unordered_set>
 #include "BusinessService.h"
 #include "common.h"
 #include "CharPool.h"
@@ -21,75 +21,132 @@ using namespace std;
 // 내부 비지니스 로직 처리 클래스
 Service::BusinessService *businessService;
 
+queue<JOB_DATA> jobQueue;
+
+unordered_set<SOCKET> liveSocket;
+
+CRITICAL_SECTION liveSocketCs;
+
+CRITICAL_SECTION queueCs;
+
 // Server 컴퓨터  CPU 개수만큼 스레드 생성될것
 // 내부 로직은 각 함수별로 처리
-unsigned WINAPI HandleThread(LPVOID pCompPort) {
+unsigned WINAPI WorkThread(void *arg) {
+
+	while (true) {
+		JOB_DATA jobData;
+		jobData.job = 0;
+		EnterCriticalSection(&queueCs);
+
+		if (jobQueue.size() != 0) {
+			jobData = jobQueue.front();
+			jobData.job = 1;
+			jobQueue.pop();
+		}
+
+		LeaveCriticalSection(&queueCs);
+
+		if (jobData.job == 1) {
+
+			EnterCriticalSection(&liveSocketCs);
+			unordered_set<SOCKET>::const_iterator itr = liveSocket.find(jobData.socket);
+			LeaveCriticalSection(&liveSocketCs);
+			if (itr == liveSocket.end()) {
+				continue;
+			}
+			// DataCopy에서 받은 ioInfo 모두 free
+			if (!businessService->SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
+				// 로그인 이전 로직 처리
+				businessService->StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());
+				// 세션값 없음 => 로그인 이전 분기 끝
+			}
+			else { // 세션값 있을때 => 대기방 또는 채팅방 상태
+
+				int status = businessService->BusinessService::GetStatus(
+					jobData.socket);
+
+				if (status == STATUS_WAITING ) { // 대기실 케이스
+					// && jobData.direction != -1
+					// 대기실 처리 함수
+					businessService->StatusWait(jobData.socket, status, jobData.direction,
+						jobData.msg.c_str());
+				}
+				else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
+					//  && jobData.direction == -1
+					// 채팅방 처리 함수
+
+					businessService->StatusChat(jobData.socket, status, jobData.direction,
+						jobData.msg.c_str());
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
+// Server 컴퓨터  CPU 개수만큼 스레드 생성될것
+// 내부 로직은 각 함수별로 처리
+unsigned WINAPI RecvThread(LPVOID pCompPort) {
 
 	// Completion port객체
 	HANDLE hComPort = (HANDLE) pCompPort;
 	SOCKET sock;
-	DWORD bytesTrans;
+	short bytesTrans;
 	LPPER_IO_DATA ioInfo;
 
 	while (true) {
 
-		bool success = GetQueuedCompletionStatus(hComPort, &bytesTrans,
+		bool success = GetQueuedCompletionStatus(hComPort, (LPDWORD)&bytesTrans,
 				(LPDWORD) &sock, (LPOVERLAPPED*) &ioInfo, INFINITE);
 
 		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
 			// 콘솔 강제종료 처리
+			EnterCriticalSection(&liveSocketCs);
+			liveSocket.erase(sock);
+			LeaveCriticalSection(&liveSocketCs);
 			businessService->ClientExit(sock);
-
 			MPool* mp = MPool::getInstance();
 			mp->Free(ioInfo);
 		} else if (READ == ioInfo->serverMode
-				|| READ_MORE == ioInfo->serverMode) { // Recv 가 기본 동작
+			|| READ_MORE == ioInfo->serverMode) { // Recv 가 기본 동작
+			// 데이터 읽기 과정
+			short remainByte = min(bytesTrans, BUF_SIZE); // 초기 Remain Byte
+			bool recvMore = false;
 
-				// 데이터 읽기 과정
-			businessService->PacketReading(ioInfo, bytesTrans);
-			if (((ioInfo->recvByte < ioInfo->totByte)
-					|| (ioInfo->recvByte < 4 && ioInfo->totByte == 0))
-					&& ioInfo->recvByte <= BUF_SIZE) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
-				businessService->BusinessService::getIocpService()->RecvMore(
-						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
-			} else { // 다 받은 후 정상 로직
-				int direction = -1;
-				int nowStatus = -1;
+			while (1) {
+				remainByte = businessService->PacketReading(ioInfo, remainByte);
+
+				// 다 받은 후 정상 로직
 				// DataCopy내에서 사용 메모리 전부 반환
-				char *msg = businessService->DataCopy(ioInfo, &nowStatus,
-						&direction);
-
-				// DataCopy에서 받은 ioInfo 모두 free
-				if (!businessService->SessionCheck(sock)) { // 세션값 없음 => 로그인 이전 분기
-					// 로그인 이전 로직 처리
-					businessService->StatusLogout(sock, direction, msg);
-					// Recv는 계속한다
-
-					businessService->BusinessService::getIocpService()->Recv(
-							sock); // 패킷 더받기
-					// 세션값 없음 => 로그인 이전 분기 끝
-				} else { // 세션값 있을때 => 대기방 또는 채팅방 상태
-
-					int status = businessService->BusinessService::GetStatus(
-							sock);
-
-					if (status == STATUS_WAITING) { // 대기실 케이스
-						// 대기실 처리 함수
-						businessService->StatusWait(sock, status, direction,
-								msg);
-					} else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
-						// 채팅방 처리 함수
-
-						businessService->StatusChat(sock, status, direction,
-								msg);
-					}
-
-					// Recv는 계속한다
-					businessService->BusinessService::getIocpService()->Recv(
-							sock);
+				if (remainByte >= 0) {
+					JOB_DATA jobData;
+					jobData.msg = businessService->DataCopy(ioInfo, &jobData.nowStatus,
+						&jobData.direction);
+					jobData.socket = sock;
+					EnterCriticalSection(&queueCs);
+					jobQueue.push(jobData);
+					LeaveCriticalSection(&queueCs);
+					// JobQueue Insert
 				}
-
+				
+				if (remainByte == 0) {
+					MPool* mp = MPool::getInstance();
+					mp->Free(ioInfo);
+					break;
+				}
+				else if (remainByte < 0) {// 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
+					businessService->BusinessService::getIocpService()->RecvMore(
+						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
+					recvMore = true;
+					break;
+				}
 			}
+			if (!recvMore) {
+				businessService->BusinessService::getIocpService()->Recv(
+					sock); // 패킷 더받기
+			}
+			
 		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
 
 			CharPool* charPool = CharPool::getInstance();
@@ -100,14 +157,8 @@ unsigned WINAPI HandleThread(LPVOID pCompPort) {
 			mp->Free(ioInfo);
 		} else {
 
-			CharPool* charPool = CharPool::getInstance();
-
-			charPool->Free(ioInfo->wsaBuf.buf);
 			MPool* mp = MPool::getInstance();
-
 			mp->Free(ioInfo);
-			// Recv는 계속한다
-			businessService->BusinessService::getIocpService()->Recv(sock);
 		}
 	}
 	return 0;
@@ -134,11 +185,25 @@ int main(int argc, char* argv[]) {
 	int process = sysInfo.dwNumberOfProcessors;
 	cout << "Server CPU num : " << process << endl;
 
+	InitializeCriticalSectionAndSpinCount(&queueCs, 2000);
+
+	InitializeCriticalSectionAndSpinCount(&liveSocketCs, 2000);
+	
 	// CPU 갯수 만큼 스레드 생성
 	// Thread Pool 스레드를 필요한 만큼 만들어 놓고 파괴 안하고 사용
-	for (int i = 0; i < 2 * process; i++) {
+	for (int i = 0; i < process; i++) {
 		// 만들어진 HandleThread를 hComPort CP 오브젝트에 할당한다
-		_beginthreadex(NULL, 0, HandleThread, (LPVOID) hComPort, 0, NULL);
+		_beginthreadex(NULL, 0, RecvThread, (LPVOID)hComPort, 0, NULL);
+		// 첫번째는 security관련 NULL 쓰며됨
+		// 다섯번째 0은 스레드 곧바로 시작 의미
+		// 여섯번째는 스레드 아이디
+	}
+
+	// CPU 갯수 만큼 스레드 생성
+	// Thread Pool 스레드를 필요한 만큼 만들어 놓고 파괴 안하고 사용
+	for (int i = 0; i < process / 2; i++) {
+		// 만들어진 HandleThread를 hComPort CP 오브젝트에 할당한다
+		_beginthreadex(NULL, 0, WorkThread, (LPVOID)hComPort, 0, NULL);
 		// 첫번째는 security관련 NULL 쓰며됨
 		// 다섯번째 0은 스레드 곧바로 시작 의미
 		// 여섯번째는 스레드 아이디
@@ -181,6 +246,9 @@ int main(int argc, char* argv[]) {
 		int addrLen = sizeof(clntAdr);
 		hClientSock = accept(hServSock, (SOCKADDR*) &clntAdr, &addrLen);
 
+		EnterCriticalSection(&liveSocketCs);
+		liveSocket.insert(hClientSock);
+		LeaveCriticalSection(&liveSocketCs);
 		// cout << "Connected client IP " << inet_ntoa(clntAdr.sin_addr) << endl;
 
 		// Completion Port 와 accept한 소켓 연결
@@ -196,7 +264,10 @@ int main(int argc, char* argv[]) {
 		businessService->BusinessService::getIocpService()->SendToOneMsg(
 				str.c_str(), hClientSock, STATUS_LOGOUT);
 	}
+	DeleteCriticalSection(&queueCs);
 
+	DeleteCriticalSection(&liveSocketCs);
+	
 	delete businessService;
 
 	return 0;

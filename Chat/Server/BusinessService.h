@@ -73,17 +73,17 @@ public:
 	void ClientExit(SOCKET sock);
 	// 로그인 이전 로직처리
 	// 세션값 없을 때 로직
-	void StatusLogout(SOCKET sock, int direction, char *message);
+	void StatusLogout(SOCKET sock, int direction, const char *message);
 	// 대기실에서의 로직 처리
 	// 세션값 있음
-	void StatusWait(SOCKET sock, int status, int direction, char *message);
+	void StatusWait(SOCKET sock, int status, int direction, const char *message);
 	// 채팅방에서의 로직 처리
 	// 세션값 있음
-	void StatusChat(SOCKET sock, int status, int direction, char *message);
+	void StatusChat(SOCKET sock, int status, int direction, const char *message);
 	// 클라이언트에게 받은 데이터 복사후 구조체 해제
-	char* DataCopy(LPPER_IO_DATA ioInfo,int *status ,int *direction);
+	string DataCopy(LPPER_IO_DATA ioInfo, int *status, int *direction);
 	// 패킷 데이터 읽기
-	void PacketReading(LPPER_IO_DATA ioInfo, DWORD bytesTrans);
+	short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans);
 
 	bool SessionCheck(SOCKET sock);
 

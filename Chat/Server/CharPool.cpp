@@ -32,6 +32,7 @@ char* CharPool::Malloc() {
 	EnterCriticalSection(&cs);
 	if (poolQueue.empty()) { // 더 할당 필요한 경우 len(초기 blocks만큼 추가)
 		char* nextP = new char[BLOCK_SIZE* len];
+		cout << "CharPool More" << endl;
 		memset((char*)nextP, 0, BLOCK_SIZE * len);
 		for (DWORD j = 0; j < len; j++) {
 			poolQueue.push(nextP + (BLOCK_SIZE* j));
