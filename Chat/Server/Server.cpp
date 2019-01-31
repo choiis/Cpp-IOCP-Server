@@ -21,13 +21,22 @@ using namespace std;
 // 내부 비지니스 로직 처리 클래스
 Service::BusinessService *businessService;
 
+// Recv가 Work에게 전달
 queue<JOB_DATA> jobQueue;
-
+// 접속끊어진 socket은 Send에서 제외
 unordered_set<SOCKET> liveSocket;
 
 CRITICAL_SECTION liveSocketCs;
 
 CRITICAL_SECTION queueCs;
+
+// DB log insert를 담당하는 스레드
+unsigned WINAPI SQLThread(void *arg) {
+
+	while (true) {
+		businessService->SQLwork();
+	}	
+}
 
 // Server 컴퓨터  CPU 개수만큼 스레드 생성될것
 // 내부 로직은 각 함수별로 처리
@@ -65,14 +74,12 @@ unsigned WINAPI WorkThread(void *arg) {
 				int status = businessService->BusinessService::GetStatus(
 					jobData.socket);
 
-				if (status == STATUS_WAITING ) { // 대기실 케이스
-					// && jobData.direction != -1
+				if (status == STATUS_WAITING) { // 대기실 케이스
 					// 대기실 처리 함수
 					businessService->StatusWait(jobData.socket, status, jobData.direction,
 						jobData.msg.c_str());
 				}
 				else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
-					//  && jobData.direction == -1
 					// 채팅방 처리 함수
 
 					businessService->StatusChat(jobData.socket, status, jobData.direction,
@@ -116,7 +123,6 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 
 			while (1) {
 				remainByte = businessService->PacketReading(ioInfo, remainByte);
-
 				// 다 받은 후 정상 로직
 				// DataCopy내에서 사용 메모리 전부 반환
 				if (remainByte >= 0) {
@@ -135,7 +141,7 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 					mp->Free(ioInfo);
 					break;
 				}
-				else if (remainByte < 0) {// 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
+				else if (remainByte < 0) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 					businessService->BusinessService::getIocpService()->RecvMore(
 						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
 					recvMore = true;
@@ -189,26 +195,24 @@ int main(int argc, char* argv[]) {
 
 	InitializeCriticalSectionAndSpinCount(&liveSocketCs, 2000);
 	
-	// CPU 갯수 만큼 스레드 생성
-	// Thread Pool 스레드를 필요한 만큼 만들어 놓고 파괴 안하고 사용
-	for (int i = 0; i < process; i++) {
+	businessService = new Service::BusinessService();
+	
+	// Thread Pool Client에게 패킷 받는 동작
+	for (int i = 0; i < (process * 3) / 8; i++) {
 		// 만들어진 HandleThread를 hComPort CP 오브젝트에 할당한다
 		_beginthreadex(NULL, 0, RecvThread, (LPVOID)hComPort, 0, NULL);
-		// 첫번째는 security관련 NULL 쓰며됨
-		// 다섯번째 0은 스레드 곧바로 시작 의미
-		// 여섯번째는 스레드 아이디
+	 }
+
+	// Thread Pool Client들에게 보내줄 정보
+	for (int i = 0; i < (process * 3) / 2; i++) {
+		_beginthreadex(NULL, 0, WorkThread, NULL, 0, NULL);
 	}
 
-	// CPU 갯수 만큼 스레드 생성
-	// Thread Pool 스레드를 필요한 만큼 만들어 놓고 파괴 안하고 사용
+	// Thread Pool 로그 저장 SQL 실행에 쓰임
 	for (int i = 0; i < process / 2; i++) {
-		// 만들어진 HandleThread를 hComPort CP 오브젝트에 할당한다
-		_beginthreadex(NULL, 0, WorkThread, (LPVOID)hComPort, 0, NULL);
-		// 첫번째는 security관련 NULL 쓰며됨
-		// 다섯번째 0은 스레드 곧바로 시작 의미
-		// 여섯번째는 스레드 아이디
+		_beginthreadex(NULL, 0, SQLThread, NULL, 0, NULL);
 	}
-
+	
 	// Overlapped IO가능 소켓을 만든다
 	// TCP 통신할것
 	hServSock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
@@ -234,8 +238,6 @@ int main(int argc, char* argv[]) {
 		cout << "listen() error!" << endl;
 		exit(1);
 	}
-
-	businessService = new Service::BusinessService();
 
 	cout << "Server ready listen" << endl;
 	cout << "port number : " << port << endl;

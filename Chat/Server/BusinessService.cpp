@@ -17,6 +17,8 @@ BusinessService::BusinessService() {
 
 	InitializeCriticalSectionAndSpinCount(&roomCs, 2000);
 
+	InitializeCriticalSectionAndSpinCount(&sqlCs, 2000);
+
 	iocpService = new IocpService::IocpService();
 	
 	dao = new Dao();
@@ -33,7 +35,41 @@ BusinessService::~BusinessService() {
 	DeleteCriticalSection(&userCs);
 
 	DeleteCriticalSection(&roomCs);
+
+	DeleteCriticalSection(&sqlCs);
 }
+
+void BusinessService::SQLwork() {
+
+	SQL_DATA sqlData;
+	
+	EnterCriticalSection(&sqlCs);
+	
+	if (sqlQueue.size() != 0) {
+		sqlData = sqlQueue.front();
+		sqlQueue.pop();
+	
+		switch (sqlData.direction)
+		{
+		case UPDATE_USER: // ID정보 update
+			break;
+			dao->UpdateUser(sqlData.vo);
+		case INSERT_LOGIN: // 로그인 정보 insert
+			dao->InsertLogin(sqlData.vo);
+			break;
+		case INSERT_DIRECTION: // 지시 로그 insert
+			dao->InsertDirection(sqlData.vo);
+			break;
+		case INSERT_CHATTING: // 채팅 로그 insert
+			dao->InsertChatting(sqlData.vo);
+			break; 
+		default:
+			break;
+		}
+	}
+	LeaveCriticalSection(&sqlCs);
+}
+
 
 // 초기 로그인
 // 세션정보 추가
@@ -42,7 +78,6 @@ void BusinessService::InitUser(const char *id, SOCKET sock, const char* nickName
 	string msg;
 
 	PER_HANDLE_DATA userInfo;
-	cout << "START user : " << nickName << endl;
 	// 유저의 상태 정보 초기화
 	userInfo.status = STATUS_WAITING;
 
@@ -53,19 +88,24 @@ void BusinessService::InitUser(const char *id, SOCKET sock, const char* nickName
 	EnterCriticalSection(&userCs);
 	// 세션정보 insert
 	this->userMap[sock] = userInfo;
+	cout << "START user : " << nickName << endl;
 	cout << "현재 접속 인원 수 : " << userMap.size() << endl;
 	LeaveCriticalSection(&userCs);
-	Vo vo;
+
+	Vo vo; // DB SQL문에 필요한 Data
 	vo.setUserId(userInfo.userId);
 	vo.setNickName(userInfo.userName);
 
-	dao->InsertLogin(vo); // 로그인 DB에 기록
-	dao->UpdateUser(vo); // 최근 로그인기록 업데이트
+	EnterCriticalSection(&sqlCs);
+	
+	SQL_DATA sqlData1, sqlData2;
+	sqlData1.vo = vo;
+	sqlData1.direction = UPDATE_USER;
+	sqlQueue.push(sqlData1); // 최근 로그인기록 업데이트
+	sqlData2.direction = INSERT_LOGIN;
+	sqlQueue.push(sqlData2); // 로그인 DB에 기록
 
-	// 로그인 계정 insert 중복로그인 방지에 쓰인다
-	EnterCriticalSection(&idCs);
-	idSet.insert(id);
-	LeaveCriticalSection(&idCs);
+	LeaveCriticalSection(&sqlCs);
 
 	msg = "입장을 환영합니다!\n";
 	msg.append(waitRoomMessage);
@@ -232,14 +272,14 @@ void BusinessService::StatusLogout(SOCKET sock, int direction, const char *messa
 			} else if (	strcmp(vo.getPassword(), sArr[1]) == 0	) { // 비밀번호 일치
 				EnterCriticalSection(&idCs);
 				unordered_set<string>::const_iterator it = idSet.find(sArr[0]);
-				LeaveCriticalSection(&idCs); // Case Lock 해제
-
 				if (it != idSet.end()) { // 중복로그인 유효성 검사
-
+					LeaveCriticalSection(&idCs); // Case Lock 해제
 					msg.append("중복 로그인은 안됩니다!\n");
 					msg.append(loginBeforeMessage);
 					iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
 				} else { // 중복로그인 X
+					idSet.insert(sArr[0]);
+					LeaveCriticalSection(&idCs); //Init부분 두번동작 방지
 					InitUser(sArr[0], sock , vo.getNickName()); // 세션정보 저장
 				}
 
@@ -252,11 +292,6 @@ void BusinessService::StatusLogout(SOCKET sock, int direction, const char *messa
 			}
 		}
 
-	} else if (direction == USER_LIST) { // 유저들 정보 요청
-
-		string userList = "아이디 정보 리스트";
-		// 추가 쿼리 필요
-		iocpService->SendToOneMsg(userList.c_str(), sock, STATUS_LOGOUT);
 	} else { // 그외 명령어 입력
 		string sendMsg = errorMessage;
 		sendMsg += waitRoomMessage;
@@ -475,13 +510,18 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 		iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_WAITING);
 	}
 
-	Vo vo;
+	Vo vo; // DB SQL문에 필요한 Data
 	vo.setNickName(name.c_str());
 	vo.setMsg(message);
 	vo.setDirection(direction);
 	vo.setStatus(status);
-	dao->InsertDirection(vo); // 지시사항 DB에 기록
 
+	EnterCriticalSection(&sqlCs);
+	SQL_DATA sqlData;
+	sqlData.vo = vo;
+	sqlData.direction = INSERT_DIRECTION;
+	sqlQueue.push(sqlData); // 지시 기록 insert
+	LeaveCriticalSection(&sqlCs);
 }
 
 // 채팅방에서의 로직 처리
@@ -549,13 +589,22 @@ void BusinessService::StatusChat(SOCKET sock, int status, int direction,
 		strncpy(roomName, userMap.find(sock)->second.roomName, NAME_SIZE);
 		LeaveCriticalSection(&userCs);
 	
-		Vo vo;
+		Vo vo; // DB SQL문에 필요한 Data
 		vo.setNickName(name.c_str());
 		vo.setRoomName(roomName);
 		vo.setMsg(msg.c_str());
 		vo.setDirection(0);
 		vo.setStatus(0);
-		dao->InsertChatting(vo); // 채팅 메세지 DB에 기록
+
+		EnterCriticalSection(&sqlCs);
+
+		SQL_DATA sqlData;
+		sqlData.vo = vo;
+		sqlData.direction = INSERT_CHATTING;
+		sqlQueue.push(sqlData); // 대화 기록 업데이트
+
+		LeaveCriticalSection(&sqlCs);
+
 
 		if (it != roomMap.end()) { // null 검사
 			iocpService->SendToRoomMsg(sendMsg.c_str(), it->second.userList,

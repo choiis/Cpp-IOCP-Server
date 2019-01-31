@@ -186,14 +186,10 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				direction = USER_ENTER;
 				status = STATUS_LOGOUT;
 			}
-			else if (msg.compare("3") == 0) {
-				direction = USER_LIST;
-				status = STATUS_LOGOUT;
-			}
-			else if (msg.compare("4") == 0) { // 클라이언트 강제종료
+			else if (msg.compare("3") == 0) { // 클라이언트 강제종료
 				exit(1);
 			}
-			else if (msg.compare("5") == 0) { // 콘솔지우기
+			else if (msg.compare("4") == 0) { // 콘솔지우기
 				system("cls");
 				cout << loginBeforeMessage << endl;
 				continue;

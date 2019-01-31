@@ -27,6 +27,8 @@ using namespace std;
 
 CRITICAL_SECTION userCs;
 
+HANDLE* handles;
+
 typedef struct { // socket info
 	SOCKET Sock;
 	int clientStatus;
@@ -290,22 +292,24 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 	while (1) {
 		// 받기 큐를 반환받는다
 
-		string alpha1 = "abcdefghijklmnopqrstuvwxyz";
-		string alpha2 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		string alpha1 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		string alpha2 = "abcdefghijklmnopqrstuvwxyz";
 		string password = "1234";
 
 		INFO_CLIENT info = clientQueue->popMakeQueue();
-		Sleep(1);
+
 		if (info.job == 1) {
-	
 			EnterCriticalSection(&userCs);
 			int cStatus =
 				clientQueue->getClientMap().find(info.Sock)->second.clientStatus;
 			string idName =
 				clientQueue->getClientMap().find(info.Sock)->second.id;
 			LeaveCriticalSection(&userCs);
-
+			HANDLE hd;
 			if (cStatus == STATUS_LOGOUT) {
+				SYSTEM_INFO sysInfo;
+				GetSystemInfo(&sysInfo);
+				WaitForMultipleObjects(sysInfo.dwNumberOfProcessors / 2, handles, FALSE, 1);
 				int randNum3 = (rand() % 2);
 				if (randNum3 % 2 == 1) {
 					int randNum1 = (rand() % 2);
@@ -345,9 +349,11 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 				}
 			}
 			else if (cStatus == STATUS_WAITING) {
-
+				SYSTEM_INFO sysInfo;
+				GetSystemInfo(&sysInfo);
+				WaitForMultipleObjects(sysInfo.dwNumberOfProcessors / 2, handles, FALSE, 1);
 				int directionNum = (rand() % 10);
-				if ((directionNum % 2) == 0) { // 0 2 4 6 8 방입장
+				if (directionNum <= 6) { // 70퍼센트 방입장
 					int randNum1 = (rand() % 2);
 					int randNum2 = (rand() % 10);
 					string roomName = "";
@@ -360,7 +366,7 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 					info.direction = ROOM_ENTER;
 					info.message = roomName;
 				}
-				else if ((directionNum % 3) == 0) { // 3 6 9 방만들기
+				else { //30 퍼센트 방만들기
 					int randNum1 = (rand() % 2);
 					int randNum2 = (rand() % 10);
 					string roomName = "";
@@ -374,20 +380,21 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 
 					info.message = roomName;
 				}
-				else if (directionNum == 7) { // 7 방정보
-					info.direction = ROOM_INFO;
-					info.message = "";
-				}
-				else if (directionNum == 1) { // 1 유저정보
-					info.direction = ROOM_USER_INFO;
+				// else if (directionNum == 7) { // 7 방정보
+				// 	info.direction = ROOM_INFO;
+				// 	info.message = "";
+				// }
+				// else if (directionNum == 1) { // 1 유저정보
+				// 	info.direction = ROOM_USER_INFO;
 
-					info.message = "";
-				}
+				// 	info.message = "";
+				// }
 			}
 			else if (cStatus == STATUS_CHATTIG) {
-				int directionNum = (rand() % 60);
+				int directionNum = (rand() % 50);
 				string msg = "";
-				if (directionNum < 59) {
+
+				if (directionNum < 49) {
 					int randNum1 = (rand() % 2);
 					for (int i = 0; i <= (rand() % 60) + 2; i++) {
 						int randNum2 = (rand() % 26);
@@ -399,7 +406,7 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 						}
 					}
 				}
-				else { // 60번에 한번 나감
+				else { // 50번에 한번 나감
 					msg = "\\out";
 				}
 				info.direction = -1;
@@ -421,7 +428,7 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 
 	while (1) {
 		bool success = GetQueuedCompletionStatus(hComPort, (LPDWORD)&bytesTrans,
-			(LPDWORD) &sock, (LPOVERLAPPED*)&ioInfo, INFINITE);
+			(LPDWORD)&sock, (LPOVERLAPPED*)&ioInfo, INFINITE);
 
 		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
 			// 서버 콘솔 강제종료 처리
@@ -454,7 +461,9 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 
 						unordered_map<SOCKET, INFO_CLIENT> clientMap =
 							clientQueue->getClientMap();
-						clientMap.find(sock)->second.clientStatus = status; // clear이후 client상태변경 해준다
+						if (clientMap.find(sock)->second.clientStatus != status) {
+							clientMap.find(sock)->second.clientStatus = status; // clear이후 client상태변경 해준다
+						}
 						clientQueue->setClientMap(clientMap);
 
 						LeaveCriticalSection(&userCs);
@@ -468,7 +477,7 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 					mp->Free(ioInfo);
 					break;
 				}
-				else if (remainByte < 0) {// 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
+				else if (remainByte < 0) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 					RecvMore(sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
 					recvMore = true;
 					break;
@@ -489,6 +498,7 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 	return 0;
 }
 
+
 int main() {
 
 	WSADATA wsaData;
@@ -506,9 +516,11 @@ int main() {
 	DWORD clientCnt;
 	cout << "클라이언트 수를 입력해 주세요";
 	cin >> clientCnt;
-	queue<INFO_CLIENT> recvQueues;
+	queue<INFO_CLIENT> makeQueues;
 	queue<INFO_CLIENT> sendQueues;
+
 	unordered_map<SOCKET, INFO_CLIENT> userMap;
+
 	clientQueue = new ClientQueue();
 	InitializeCriticalSectionAndSpinCount(&userCs, 2000);
 
@@ -548,7 +560,7 @@ int main() {
 
 		// Recv부터 간다
 		info.job = 0;
-		recvQueues.push(info);
+		makeQueues.push(info);
 		// userMap 채운다
 		userMap[clientSocket] = info;
 		// cout << "sock num " << clientSocket << " id " << info.id << endl;
@@ -559,7 +571,7 @@ int main() {
 	// 전체 clientUser
 	clientQueue->setClientMap(userMap);
 	// Recv큐는 채워서
-	clientQueue->setMakeQueue(recvQueues);
+	clientQueue->setMakeQueue(makeQueues);
 	// Send큐는 빈상태로
 	clientQueue->setSendQueue(sendQueues);
 
@@ -568,12 +580,12 @@ int main() {
 	SYSTEM_INFO sysInfo;
 	GetSystemInfo(&sysInfo);
 	int process = sysInfo.dwNumberOfProcessors;
-
+	handles = new HANDLE[process / 2];
 	// 수신 스레드 동작
 	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다
 	// RecvMsg에서 Recv가 완료되면 동작할 부분이 있다
 	for (int i = 0; i < process / 2; i++) {
-		_beginthreadex(NULL, 0, RecvMsgThread, (LPVOID)hComPort, 0,
+		handles[i] = (HANDLE)_beginthreadex(NULL, 0, RecvMsgThread, (LPVOID)hComPort, 0,
 			NULL);
 	}
 
@@ -582,16 +594,19 @@ int main() {
 	_beginthreadex(NULL, 0, MakeMsgThread,
 		NULL, 0,
 		NULL);
-	
+
 
 	// 송신 스레드 동작
 	// Thread안에서 clientSocket으로 Send해줄거니까 인자로 넘겨준다
 	// CP랑 Send는 연결 안되어있음 GetQueuedCompletionStatus에서 Send 완료처리 필요없음
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < 3; i++)
+	{
 		_beginthreadex(NULL, 0, SendMsgThread,
 			NULL, 0,
 			NULL);
 	}
+
+
 
 	while (true) {
 		int moreClient;
@@ -606,7 +621,7 @@ int main() {
 	}
 	// 임계영역 Object 반환
 	DeleteCriticalSection(&userCs);
-
+	delete[] handles;
 	delete clientQueue;
 	WSACleanup();
 	return 0;

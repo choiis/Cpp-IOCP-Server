@@ -21,6 +21,12 @@
 
 // #pragma comment(lib, "Dao.h") 
 
+// SQLwork에게 전달할 정보들
+#define UPDATE_USER 1
+#define INSERT_LOGIN 2
+#define INSERT_DIRECTION 3
+#define INSERT_CHATTING 4
+
 // 서버에 접속한 유저 정보
 // client 소켓에 대응하는 세션정보
 typedef struct { // socket info
@@ -36,6 +42,12 @@ typedef struct { // buffer info
 	CRITICAL_SECTION listCs;
 } ROOM_DATA, *P_ROOM_DATA;
 
+// 비동기 통신에 필요한 구조체
+typedef struct { // buffer info
+	int direction;
+	Vo vo;
+} SQL_DATA, *P_SQL_DATA;
+
 namespace Service {
 
 class BusinessService {
@@ -49,6 +61,7 @@ private:
 	// 서버의 방 정보 저장
 	unordered_map<string, ROOM_DATA> roomMap;
 
+	queue<SQL_DATA> sqlQueue;
 	// 임계영역에 필요한 객체
 	// 커널모드 아니라 유저모드수준 동기화 사용할 예
 	// 한 프로세스내의 동기화 이므로 크리티컬섹션 사용
@@ -60,12 +73,18 @@ private:
 	// roomMap 동기화
 	CRITICAL_SECTION roomCs;
 
+	CRITICAL_SECTION sqlCs;
+
 	IocpService::IocpService *iocpService;
+
+	unsigned WINAPI RecvThread(void* args);
 public:
 	// 생성자
 	BusinessService();
 	// 소멸자
 	virtual ~BusinessService();
+	// SQLThread에서 동작할 부분
+	void SQLwork();
 	// 초기 로그인
 	// 세션정보 추가
 	void InitUser(const char *id, SOCKET sock ,const char *nickName);
