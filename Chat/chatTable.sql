@@ -1,6 +1,5 @@
-
 CREATE table cso_id(
-userid varchar(10) not null,
+userid varchar(10) COLLATE KOREAN_WANSUNG_CS_AS not null,
 password varchar(10) not null,
 nickname varchar(20) not null,
 regdate datetime not null,
@@ -11,7 +10,7 @@ alter table cso_id
 add constraint pk_cso_id primary key(userid);
 
 CREATE table cso_login(
-userid varchar(10) not null,
+userid varchar(10) COLLATE KOREAN_WANSUNG_CS_AS not null,
 logindate datetime not null,
 nickname varchar(20) not null
 );
@@ -31,7 +30,7 @@ message varchar(512) not null
 );
 
 alter table cso_direction
-add constraint pk_cso_direction primary key(nickname, logdate);
+add constraint pk_cso_direction primary key(logdate ,nickname);
 
 
 CREATE table cso_chatting(
@@ -42,21 +41,5 @@ message varchar(512) not null
 );
 
 alter table cso_chatting
-add constraint pk_cso_chatting primary key(nickname, logdate);
-
-CREATE index idx_cso_chatting
-on cso_chatting(message);
-
-
-
-
-
-
-
-
-
-
-
-
-
+add constraint pk_cso_chatting primary key(logdate , nickname);
 
