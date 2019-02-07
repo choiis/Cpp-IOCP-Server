@@ -210,7 +210,7 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				getline(cin, msg);
 				direction = ROOM_ENTER;
 			}
-			else if (msg.compare("4") == 0) {	// 유저 정보 요청
+			else if (msg.compare("4") == 0) { // 유저 정보 요청
 				direction = ROOM_USER_INFO;
 			}
 			else if (msg.compare("5") == 0) { // 귓속말
@@ -223,6 +223,9 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				msg.append("\\");
 				msg.append(Msg); // 대상
 				direction = WHISPER;
+			}
+			else if (msg.compare("6") == 0) { // 로그아웃
+				direction = LOG_OUT;
 			}
 			else if (msg.compare("7") == 0) { // 콘솔지우기
 				system("cls");
@@ -431,7 +434,10 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 			charPool->Free(ioInfo->wsaBuf.buf);
 			mp->Free(ioInfo);
 		}
-
+		else {
+			MPool* mp = MPool::getInstance();
+			mp->Free(ioInfo);
+		}
 	}
 	return 0;
 }

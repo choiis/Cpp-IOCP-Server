@@ -23,70 +23,84 @@ Service::BusinessService *businessService;
 
 // Recv가 Work에게 전달
 queue<JOB_DATA> jobQueue;
+
+CRITICAL_SECTION queueCs;
+
 // 접속끊어진 socket은 Send에서 제외
 unordered_set<SOCKET> liveSocket;
 
 CRITICAL_SECTION liveSocketCs;
-
-CRITICAL_SECTION queueCs;
-
 // DB log insert를 담당하는 스레드
 unsigned WINAPI SQLThread(void *arg) {
 
 	while (true) {
 		businessService->SQLwork();
 	}	
+
+	return 0;
 }
+
+// Send broadcast 담당하는 스레드
+unsigned WINAPI SendThread(void *arg) {
+
+	while (true) {
+		businessService->Sendwork();
+	}
+	return 0;
+}
+
 
 // Server 컴퓨터  CPU 개수만큼 스레드 생성될것
 // 내부 로직은 각 함수별로 처리
 unsigned WINAPI WorkThread(void *arg) {
 
 	while (true) {
-		JOB_DATA jobData;
-		jobData.job = 0;
-		EnterCriticalSection(&queueCs);
 
-		if (jobQueue.size() != 0) {
-			jobData = jobQueue.front();
-			jobData.job = 1;
-			jobQueue.pop();
-		}
+		if (!jobQueue.empty()) {
+			EnterCriticalSection(&queueCs);
+			// 큐 통채 복사
+			queue<JOB_DATA> copyJobQueue = jobQueue;
+			queue<JOB_DATA> emptyQueue; // 빈 큐
+			swap(jobQueue, emptyQueue); // 빈 큐로 바꿔치기
+			LeaveCriticalSection(&queueCs);
 
-		LeaveCriticalSection(&queueCs);
+			while (!copyJobQueue.empty()) { // 여러 패킷 데이터 한꺼번에 처리
+				JOB_DATA jobData = copyJobQueue.front();
+				copyJobQueue.pop();
 
-		if (jobData.job == 1) {
-
-			EnterCriticalSection(&liveSocketCs);
-			unordered_set<SOCKET>::const_iterator itr = liveSocket.find(jobData.socket);
-			LeaveCriticalSection(&liveSocketCs);
-			if (itr == liveSocket.end()) {
-				continue;
-			}
-			// DataCopy에서 받은 ioInfo 모두 free
-			if (!businessService->SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
-				// 로그인 이전 로직 처리
-				businessService->StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());
-				// 세션값 없음 => 로그인 이전 분기 끝
-			}
-			else { // 세션값 있을때 => 대기방 또는 채팅방 상태
-
-				int status = businessService->BusinessService::GetStatus(
-					jobData.socket);
-
-				if (status == STATUS_WAITING) { // 대기실 케이스
-					// 대기실 처리 함수
-					businessService->StatusWait(jobData.socket, status, jobData.direction,
-						jobData.msg.c_str());
+				if (liveSocket.find(jobData.socket) == liveSocket.end()) {
+					continue;
 				}
-				else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
-					// 채팅방 처리 함수
 
-					businessService->StatusChat(jobData.socket, status, jobData.direction,
-						jobData.msg.c_str());
+				// DataCopy에서 받은 ioInfo 모두 free
+				if (!businessService->SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
+					// 로그인 이전 로직 처리
+					businessService->StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());
+					// 세션값 없음 => 로그인 이전 분기 끝
+				}
+				else { // 세션값 있을때 => 대기방 또는 채팅방 상태
+
+					int status = businessService->BusinessService::GetStatus(
+						jobData.socket);
+
+					if (status == STATUS_WAITING && jobData.direction != -1) { // 대기실 케이스
+						// 대기실 처리 함수
+						businessService->StatusWait(jobData.socket, status, jobData.direction,
+							jobData.msg.c_str());
+					}
+					else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
+						// 채팅방 처리 함수
+
+						businessService->StatusChat(jobData.socket, status, jobData.direction,
+							jobData.msg.c_str());
+					}
 				}
 			}
 		}
+		else {  // 동작안할 떄 다른 스레드가 일할 수 있게
+			Sleep(1);
+		}
+		
 	}
 
 	return 0;
@@ -121,7 +135,10 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 			short remainByte = min(bytesTrans, BUF_SIZE); // 초기 Remain Byte
 			bool recvMore = false;
 
-			while (1) {
+			// jobQueue에 데이터를 한번에 담기위한 자료구조
+			queue<JOB_DATA> packetQueue;
+
+			while (true) {
 				remainByte = businessService->PacketReading(ioInfo, remainByte);
 				// 다 받은 후 정상 로직
 				// DataCopy내에서 사용 메모리 전부 반환
@@ -130,10 +147,8 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 					jobData.msg = businessService->DataCopy(ioInfo, &jobData.nowStatus,
 						&jobData.direction);
 					jobData.socket = sock;
-					EnterCriticalSection(&queueCs);
-					jobQueue.push(jobData);
-					LeaveCriticalSection(&queueCs);
-					// JobQueue Insert
+					packetQueue.push(jobData);
+					// packetQueue 채움
 				}
 				
 				if (remainByte == 0) {
@@ -148,11 +163,20 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 					break;
 				}
 			}
-			if (!recvMore) {
+
+			EnterCriticalSection(&queueCs); // jobQueue Lock횟수를 줄인다
+			while (!packetQueue.empty()) { // packetQueue -> jobQueue 
+				JOB_DATA jobData = packetQueue.front();
+				packetQueue.pop();
+				jobQueue.push(jobData);
+			}
+			LeaveCriticalSection(&queueCs);
+			// jobQueue에 한번에 Insert
+			
+			if (!recvMore) { // recvMore이 아니면 해당 socket은 받기 동작을 계속한다
 				businessService->BusinessService::getIocpService()->Recv(
 					sock); // 패킷 더받기
 			}
-			
 		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
 
 			CharPool* charPool = CharPool::getInstance();
@@ -191,26 +215,34 @@ int main(int argc, char* argv[]) {
 	int process = sysInfo.dwNumberOfProcessors;
 	cout << "Server CPU num : " << process << endl;
 
+	MPool* mp = MPool::getInstance(); // 메모리풀 초기화 지점
+	CharPool* charPool = CharPool::getInstance(); // 메모리풀 초기화 지점
+
 	InitializeCriticalSectionAndSpinCount(&queueCs, 2000);
 
 	InitializeCriticalSectionAndSpinCount(&liveSocketCs, 2000);
-	
+
 	businessService = new Service::BusinessService();
 	
 	// Thread Pool Client에게 패킷 받는 동작
-	for (int i = 0; i < (process * 3) / 8; i++) {
+	for (int i = 0; i < process / 2; i++) {
 		// 만들어진 HandleThread를 hComPort CP 오브젝트에 할당한다
 		_beginthreadex(NULL, 0, RecvThread, (LPVOID)hComPort, 0, NULL);
-	 }
+	}
 
-	// Thread Pool Client들에게 보내줄 정보
-	for (int i = 0; i < (process * 3) / 2; i++) {
+	// Thread Pool 비지니스 로직 담당
+	for (int i = 0; i < process; i++) {
 		_beginthreadex(NULL, 0, WorkThread, NULL, 0, NULL);
 	}
 
 	// Thread Pool 로그 저장 SQL 실행에 쓰임
-	for (int i = 0; i < process / 2; i++) {
+	for (int i = 0; i < process / 3; i++) {
 		_beginthreadex(NULL, 0, SQLThread, NULL, 0, NULL);
+	}
+
+	// Thread Pool BroadCast 해줌
+	for (int i = 0; i < (process * 2) / 3; i++) {
+		_beginthreadex(NULL, 0, SendThread, NULL, 0, NULL);
 	}
 	
 	// Overlapped IO가능 소켓을 만든다
@@ -251,7 +283,6 @@ int main(int argc, char* argv[]) {
 		EnterCriticalSection(&liveSocketCs);
 		liveSocket.insert(hClientSock);
 		LeaveCriticalSection(&liveSocketCs);
-		// cout << "Connected client IP " << inet_ntoa(clntAdr.sin_addr) << endl;
 
 		// Completion Port 와 accept한 소켓 연결
 		CreateIoCompletionPort((HANDLE) hClientSock, hComPort,
@@ -267,8 +298,6 @@ int main(int argc, char* argv[]) {
 				str.c_str(), hClientSock, STATUS_LOGOUT);
 	}
 	DeleteCriticalSection(&queueCs);
-
-	DeleteCriticalSection(&liveSocketCs);
 	
 	delete businessService;
 

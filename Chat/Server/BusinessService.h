@@ -9,6 +9,7 @@
 #define BUSINESSSERVICE_H_
 
 #include <winsock2.h>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <list>
@@ -59,9 +60,11 @@ private:
 	// 서버에 접속한 유저 자료 저장
 	unordered_map<SOCKET, PER_HANDLE_DATA> userMap;
 	// 서버의 방 정보 저장
-	unordered_map<string, ROOM_DATA> roomMap;
+	unordered_map<string, shared_ptr<ROOM_DATA>> roomMap;
 
 	queue<SQL_DATA> sqlQueue;
+
+	queue<Send_DATA> sendQueue;
 	// 임계영역에 필요한 객체
 	// 커널모드 아니라 유저모드수준 동기화 사용할 예
 	// 한 프로세스내의 동기화 이므로 크리티컬섹션 사용
@@ -72,8 +75,10 @@ private:
 	CRITICAL_SECTION userCs;
 	// roomMap 동기화
 	CRITICAL_SECTION roomCs;
-
+	// sqlQueue 동기화
 	CRITICAL_SECTION sqlCs;
+	// sendQueue 동기화
+	CRITICAL_SECTION sendCs;
 
 	IocpService::IocpService *iocpService;
 
@@ -85,6 +90,10 @@ public:
 	virtual ~BusinessService();
 	// SQLThread에서 동작할 부분
 	void SQLwork();
+	// SendThread에서 동작할 부분
+	void Sendwork();
+	// InsertSendQueue 공통화
+	void InsertSendQueue(int direction, string msg,string roomName,SOCKET socket,int status);
 	// 초기 로그인
 	// 세션정보 추가
 	void InitUser(const char *id, SOCKET sock ,const char *nickName);
@@ -112,7 +121,7 @@ public:
 		return idSet;
 	}
 
-	const unordered_map<string, ROOM_DATA>& getRoomMap() const {
+	const unordered_map<string, std::shared_ptr<ROOM_DATA>>& getRoomMap() const {
 		return roomMap;
 	}
 
@@ -120,7 +129,7 @@ public:
 		return userMap;
 	}
 
-	IocpService::IocpService* getIocpService();
+	IocpService::IocpService* getIocpService() ;
 
 	const CRITICAL_SECTION& getIdCs() const {
 		return idCs;

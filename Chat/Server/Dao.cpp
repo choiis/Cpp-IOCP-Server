@@ -82,9 +82,9 @@ Vo& Dao::selectUser(Vo& vo){
 // ID정보 update
 void Dao::UpdateUser(Vo& vo){
 	EnterCriticalSection(&this->cs);
-	if (hStmt != SQL_NULL_HSTMT) {
-		res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
-	}
+	
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+	
 
 	char query[512] = "update cso_id set lastlogdate = getdate() where userid = ? ";
 
@@ -101,9 +101,8 @@ void Dao::UpdateUser(Vo& vo){
 // ID정보 insert
 void Dao::InsertUser(Vo& vo) {
 	EnterCriticalSection(&this->cs);
-	if (hStmt != SQL_NULL_HSTMT) {
-		res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
-	}
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+	
 	char query[512] = "insert into cso_id(userid, password , nickname , regdate) values(? ,? ,? ,getdate() ) ";
 	
 	res = SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 10, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
@@ -121,9 +120,8 @@ void Dao::InsertUser(Vo& vo) {
 // 로그인 정보 insert
 void Dao::InsertLogin(Vo& vo) {
 	EnterCriticalSection(&this->cs);
-	if (hStmt != SQL_NULL_HSTMT) {
-		res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
-	}
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+	
 
 	char query[512] = "insert into cso_login(userid, logindate , nickname) values(? ,getdate() ,? ) ";
 	
@@ -142,9 +140,8 @@ void Dao::InsertLogin(Vo& vo) {
 void Dao::InsertDirection(Vo& vo) {
 	EnterCriticalSection(&this->cs);
 
-	if (hStmt != SQL_NULL_HSTMT) {
-		res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
-	}
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+	
 	char query[512] = "insert into cso_direction(nickname, logdate, status, direction , message) values(? ,getdate() ,? ,? ,? ) ";
 
 	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getNickName(), sizeof(vo.getNickName()), NULL);
@@ -166,9 +163,8 @@ void Dao::InsertDirection(Vo& vo) {
 // 채팅 로그 insert
 void  Dao::InsertChatting(Vo& vo) {
 	EnterCriticalSection(&this->cs);
-	if (hStmt != SQL_NULL_HSTMT) {
-		res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
-	}
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+	
 	char query[512] = "insert into cso_chatting(nickname,logdate,roomname,message)  values(? ,getdate() , ? , ?)";
 	
 	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getNickName(), sizeof(vo.getNickName()), NULL);

@@ -44,6 +44,9 @@ using namespace std;
 #define errorMessage "잘못된 명령어 입니다"
 #define chatRoomMessage  "나가시려면 \\out을 콘솔지우기는 \\clear를 입력하세요"
 
+#define SEND_ME 1
+#define SEND_ROOM 2
+
 // 비동기 통신에 필요한 구조체
 typedef struct { // buffer info
 	OVERLAPPED overlapped;
@@ -64,4 +67,13 @@ typedef struct { // buffer info
 	string msg;
 	int job;
 } JOB_DATA, *P_JOB_DATA;
+
+// Send Queue에 대한 구조체
+typedef struct { // buffer info
+	string msg;
+	SOCKET mySocket;
+	string roomName;
+	int direction;
+	int status;
+} Send_DATA, *P_Send_DATA;
 #endif /* COMMON_H_ */

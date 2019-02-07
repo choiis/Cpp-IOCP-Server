@@ -234,8 +234,6 @@ short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
 			copy(ioInfo->buffer, ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte),
 				((char*)ioInfo->recvBuffer) + ioInfo->recvByte);
 
-			// cout << "bodySize readmore" << ioInfo->bodySize << endl;
-
 			if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
 				copy(ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte), ioInfo->buffer + bytesTrans, ioInfo->buffer);
 				return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte); // 남은 바이트 수
@@ -262,7 +260,7 @@ char* DataCopy(LPPER_IO_DATA ioInfo, int *status) {
 
 	copy(((char*)ioInfo->recvBuffer) + 10,
 		((char*)ioInfo->recvBuffer) + 10
-		+ min(ioInfo->bodySize, (DWORD)BUF_SIZE), msg); //에러위치
+		+ min(ioInfo->bodySize, (DWORD)BUF_SIZE), msg); 
 
 	// 다 복사 받았으니 할당 해제
 	charPool->Free(ioInfo->recvBuffer);
@@ -282,6 +280,9 @@ unsigned WINAPI SendMsgThread(void *arg) {
 			info.job = 0;
 			clientQueue->pushMakeQueue(info);
 		}
+		else {
+			Sleep(1);
+		}
 	}
 	return 0;
 }
@@ -295,7 +296,8 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 		string alpha1 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 		string alpha2 = "abcdefghijklmnopqrstuvwxyz";
 		string password = "1234";
-
+		string msgs[10] = {"안녕하세요!","반갑습니다!","고맙습니다","Hello World","곤니치와","아리가토","C++"
+		,"굿모닝","땡큐","하이"};
 		INFO_CLIENT info = clientQueue->popMakeQueue();
 
 		if (info.job == 1) {
@@ -305,11 +307,9 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 			string idName =
 				clientQueue->getClientMap().find(info.Sock)->second.id;
 			LeaveCriticalSection(&userCs);
-			HANDLE hd;
+
 			if (cStatus == STATUS_LOGOUT) {
-				SYSTEM_INFO sysInfo;
-				GetSystemInfo(&sysInfo);
-				WaitForMultipleObjects(sysInfo.dwNumberOfProcessors / 2, handles, FALSE, 1);
+				Sleep(1);
 				int randNum3 = (rand() % 2);
 				if (randNum3 % 2 == 1) {
 					int randNum1 = (rand() % 2);
@@ -349,9 +349,7 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 				}
 			}
 			else if (cStatus == STATUS_WAITING) {
-				SYSTEM_INFO sysInfo;
-				GetSystemInfo(&sysInfo);
-				WaitForMultipleObjects(sysInfo.dwNumberOfProcessors / 2, handles, FALSE, 1);
+				Sleep(1);
 				int directionNum = (rand() % 10);
 				if (directionNum <= 6) { // 70퍼센트 방입장
 					int randNum1 = (rand() % 2);
@@ -380,41 +378,26 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 
 					info.message = roomName;
 				}
-				// else if (directionNum == 7) { // 7 방정보
-				// 	info.direction = ROOM_INFO;
-				// 	info.message = "";
-				// }
-				// else if (directionNum == 1) { // 1 유저정보
-				// 	info.direction = ROOM_USER_INFO;
-
-				// 	info.message = "";
-				// }
 			}
 			else if (cStatus == STATUS_CHATTIG) {
-				int directionNum = (rand() % 50);
+				int directionNum = (rand() % 60);
 				string msg = "";
-
-				if (directionNum < 49) {
-					int randNum1 = (rand() % 2);
-					for (int i = 0; i <= (rand() % 60) + 2; i++) {
-						int randNum2 = (rand() % 26);
-						if (randNum1 == 0) {
-							msg += alpha1.at(randNum2);
-						}
-						else {
-							msg += alpha2.at(randNum2);
-						}
-					}
-				}
-				else { // 50번에 한번 나감
+				if (directionNum == 59){
 					msg = "\\out";
 				}
+				else {
+					msg = msgs[directionNum % 10];
+				}
+				
 				info.direction = -1;
 				info.message = msg;
 			}
 
 			info.job = 0;
 			clientQueue->pushSendQueue(info);
+		}
+		else {
+			Sleep(1);
 		}
 	}
 	return 0;
@@ -494,6 +477,10 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 			charPool->Free(ioInfo->wsaBuf.buf);
 			mp->Free(ioInfo);
 		}
+		else {
+			MPool* mp = MPool::getInstance();
+			mp->Free(ioInfo);
+		}
 	}
 	return 0;
 }
@@ -529,6 +516,7 @@ int main() {
 
 	srand((unsigned int)time(NULL));
 
+	int k = 0;
 	for (DWORD i = 0; i < clientCnt; i++) {
 		SOCKET clientSocket = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP,
 			NULL, 0,
@@ -551,9 +539,9 @@ int main() {
 		INFO_CLIENT info;
 		info.Sock = clientSocket;
 		info.clientStatus = STATUS_LOGOUT;
-		string alpha1 = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+		string alpha1 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 		info.id = "";
-		int j = i % 52;
+		int j = (k+i) % 52;
 		for (DWORD k = 0; k <= i / 52; k++) {
 			info.id += alpha1.at(j);
 		}
@@ -580,11 +568,11 @@ int main() {
 	SYSTEM_INFO sysInfo;
 	GetSystemInfo(&sysInfo);
 	int process = sysInfo.dwNumberOfProcessors;
-	handles = new HANDLE[process / 2];
+	handles = new HANDLE[(process * 2) / 3];
 	// 수신 스레드 동작
 	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다
 	// RecvMsg에서 Recv가 완료되면 동작할 부분이 있다
-	for (int i = 0; i < process / 2; i++) {
+	for (int i = 0; i < (process * 2)/ 3; i++) {
 		handles[i] = (HANDLE)_beginthreadex(NULL, 0, RecvMsgThread, (LPVOID)hComPort, 0,
 			NULL);
 	}
@@ -599,7 +587,7 @@ int main() {
 	// 송신 스레드 동작
 	// Thread안에서 clientSocket으로 Send해줄거니까 인자로 넘겨준다
 	// CP랑 Send는 연결 안되어있음 GetQueuedCompletionStatus에서 Send 완료처리 필요없음
-	for (int i = 0; i < 3; i++)
+	for (int i = 0; i < process / 3; i++)
 	{
 		_beginthreadex(NULL, 0, SendMsgThread,
 			NULL, 0,

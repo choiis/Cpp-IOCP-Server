@@ -36,6 +36,7 @@ using namespace std;
 #define WHISPER 6
 #define ROOM_INFO 7
 #define ROOM_USER_INFO 8
+#define LOG_OUT 9
 // 로그인 중복 방지
 #define NOW_LOGOUT 0
 #define NOW_LOGIN 1

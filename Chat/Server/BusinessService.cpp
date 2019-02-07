@@ -19,6 +19,8 @@ BusinessService::BusinessService() {
 
 	InitializeCriticalSectionAndSpinCount(&sqlCs, 2000);
 
+	InitializeCriticalSectionAndSpinCount(&sendCs, 2000);
+
 	iocpService = new IocpService::IocpService();
 	
 	dao = new Dao();
@@ -37,6 +39,8 @@ BusinessService::~BusinessService() {
 	DeleteCriticalSection(&roomCs);
 
 	DeleteCriticalSection(&sqlCs);
+
+	DeleteCriticalSection(&sendCs);
 }
 
 void BusinessService::SQLwork() {
@@ -52,8 +56,8 @@ void BusinessService::SQLwork() {
 		switch (sqlData.direction)
 		{
 		case UPDATE_USER: // ID정보 update
-			break;
 			dao->UpdateUser(sqlData.vo);
+			break;
 		case INSERT_LOGIN: // 로그인 정보 insert
 			dao->InsertLogin(sqlData.vo);
 			break;
@@ -70,6 +74,71 @@ void BusinessService::SQLwork() {
 	LeaveCriticalSection(&sqlCs);
 }
 
+
+void BusinessService::Sendwork() {
+	
+	Send_DATA sendData;
+
+	if (sendQueue.size() != 0) {
+		EnterCriticalSection(&sendCs);
+		sendData = sendQueue.front();
+		sendQueue.pop();
+		LeaveCriticalSection(&sendCs);
+		switch (sendData.direction)
+		{
+		case SEND_ME: // Send to One
+			iocpService->SendToOneMsg(sendData.msg.c_str(), sendData.mySocket, sendData.status);
+			break;
+		case SEND_ROOM: // Send to Room
+			// LockCount가 있을 때 => 방 리스트가 살아있을 때
+			{
+				EnterCriticalSection(&roomCs);
+				auto iter = roomMap.find(sendData.roomName);
+				shared_ptr<ROOM_DATA> second;
+				if (iter != roomMap.end()) {
+					second = iter->second;
+				}
+				LeaveCriticalSection(&roomCs);
+
+				if (second->listCs.LockCount == -1) {
+					EnterCriticalSection(&second->listCs);
+					iocpService->SendToRoomMsg(sendData.msg.c_str(), second->userList, sendData.status);
+					LeaveCriticalSection(&second->listCs);
+				}
+				break;
+			}
+		default:
+			break;
+		}
+	}
+	else {
+		Sleep(1);
+	}
+	
+}
+
+// InsertSendQueue 공통화
+void BusinessService::InsertSendQueue(int direction, string msg, string roomName, SOCKET socket, int status){
+
+	EnterCriticalSection(&sendCs);
+	// SendQueue에 Insert
+	Send_DATA sendData;
+	if (direction == SEND_ME) {
+		sendData.direction = direction;
+		sendData.msg = msg;
+		sendData.mySocket = socket;
+		sendData.status = status;
+	}
+	else { //  SEND_ROOM
+		sendData.direction = direction;
+		sendData.msg = msg;
+		sendData.roomName = roomName;
+		sendData.status = status;
+	}
+	
+	sendQueue.push(sendData);
+	LeaveCriticalSection(&sendCs);
+}
 
 // 초기 로그인
 // 세션정보 추가
@@ -102,6 +171,7 @@ void BusinessService::InitUser(const char *id, SOCKET sock, const char* nickName
 	sqlData1.vo = vo;
 	sqlData1.direction = UPDATE_USER;
 	sqlQueue.push(sqlData1); // 최근 로그인기록 업데이트
+	sqlData2.vo = vo;
 	sqlData2.direction = INSERT_LOGIN;
 	sqlQueue.push(sqlData2); // 로그인 DB에 기록
 
@@ -110,7 +180,7 @@ void BusinessService::InitUser(const char *id, SOCKET sock, const char* nickName
 	msg = "입장을 환영합니다!\n";
 	msg.append(waitRoomMessage);
 
-	iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_WAITING);
+	InsertSendQueue(SEND_ME, msg, "", sock, STATUS_WAITING);
 }
 
 // 접속 강제종료 로직
@@ -136,54 +206,47 @@ void BusinessService::ClientExit(SOCKET sock) {
 			LeaveCriticalSection(&idCs);
 
 			// 방이름 임시 저장
-			if (strcmp(roomName, "") != 0) { // 방에 접속중인 경우
+			if (userMap.find(sock)->second.status == STATUS_CHATTIG) { // 방에 접속중인 경우
 				// 나가는 사람 정보 out
 
 				EnterCriticalSection(&roomCs);
-				int roomMapCnt = roomMap.count(roomName);
-				LeaveCriticalSection(&roomCs);
-
-				if (roomMapCnt != 0) { // null 체크 우선
-					EnterCriticalSection(&roomCs);
+				
+				if (roomMap.find(roomName) != roomMap.end()) { // null 체크 우선
 
 					EnterCriticalSection(
-							&roomMap.find(roomName)->second.listCs);
-					(roomMap.find(roomName)->second).userList.remove(sock);
+							&roomMap.find(roomName)->second->listCs);
+					roomMap.find(roomName)->second->userList.remove(sock);
 
 					LeaveCriticalSection(
-							&roomMap.find(roomName)->second.listCs);
+						&roomMap.find(roomName)->second->listCs);
 
-					if ((roomMap.find(roomName)->second).userList.size() == 0) { // 방인원 0명이면 방 삭제
+					if ((roomMap.find(roomName)->second)->userList.size() == 0) { // 방인원 0명이면 방 삭제
 						DeleteCriticalSection(
-								&roomMap.find(roomName)->second.listCs);
+							&roomMap.find(roomName)->second->listCs);
 						// 방 별로 가진 CS를 Delete 친다
 						
 						roomMap.erase(roomName);
 						LeaveCriticalSection(&roomCs);
 					} else {
-						LeaveCriticalSection(&roomCs);
 						string sendMsg = name;
 						// 이름먼저 복사 NAME_SIZE까지
 						sendMsg += " 님이 나갔습니다!";
 
-						EnterCriticalSection(&roomCs);
 						EnterCriticalSection(&userCs);
 						string roomN = userMap.find(sock)->second.roomName;
 						LeaveCriticalSection(&userCs);
 						int roomMapCnt = roomMap.count(roomN);
 
 						if (roomMapCnt != 0) { // null 검사
-
-							iocpService->SendToRoomMsg(sendMsg.c_str(),
-									roomMap.find(
-											userMap.find(sock)->second.roomName)->second.userList,
-									STATUS_CHATTIG,
-									&roomMap.find(
-											userMap.find(sock)->second.roomName)->second.listCs);
+							// SendQueue에 Insert
+							InsertSendQueue(SEND_ROOM, sendMsg, userMap.find(sock)->second.roomName, 0, STATUS_CHATTIG);
 						}
 
 						LeaveCriticalSection(&roomCs);
 					}
+				}
+				else {
+					LeaveCriticalSection(&roomCs);
 				}
 			}
 			EnterCriticalSection(&userCs);
@@ -234,13 +297,14 @@ void BusinessService::StatusLogout(SOCKET sock, int direction, const char *messa
 				msg.append("계정 생성 완료!\n");
 				msg.append(loginBeforeMessage);
 
-				iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
+				InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
+
 			} else { // ID중복있음
 
 				msg.append("중복된 아이디가 있습니다!\n");
 				msg.append(loginBeforeMessage);
 
-				iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
+				InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
 			}
 		}
 
@@ -268,7 +332,9 @@ void BusinessService::StatusLogout(SOCKET sock, int direction, const char *messa
 				msg.append("없는 계정입니다 아이디를 확인하세요!\n");
 				msg.append(loginBeforeMessage);
 
-				iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
+				// SendQueue에 Insert
+				InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
+
 			} else if (	strcmp(vo.getPassword(), sArr[1]) == 0	) { // 비밀번호 일치
 				EnterCriticalSection(&idCs);
 				unordered_set<string>::const_iterator it = idSet.find(sArr[0]);
@@ -276,7 +342,10 @@ void BusinessService::StatusLogout(SOCKET sock, int direction, const char *messa
 					LeaveCriticalSection(&idCs); // Case Lock 해제
 					msg.append("중복 로그인은 안됩니다!\n");
 					msg.append(loginBeforeMessage);
-					iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
+
+					// SendQueue에 Insert
+					InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
+
 				} else { // 중복로그인 X
 					idSet.insert(sArr[0]);
 					LeaveCriticalSection(&idCs); //Init부분 두번동작 방지
@@ -288,15 +357,15 @@ void BusinessService::StatusLogout(SOCKET sock, int direction, const char *messa
 				msg.append("비밀번호 틀림!\n");
 				msg.append(loginBeforeMessage);
 
-				iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_LOGOUT);
+				InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
+
 			}
 		}
 
 	} else { // 그외 명령어 입력
 		string sendMsg = errorMessage;
 		sendMsg += waitRoomMessage;
-		// 대기방의 오류이므로 STATUS_WAITING 상태로 전달한다
-		iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_LOGOUT);
+		InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_LOGOUT);
 	}
 
 }
@@ -315,75 +384,73 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 		// 유효성 검증 먼저
 		EnterCriticalSection(&roomCs);
 		int cnt = roomMap.count(msg);
-		LeaveCriticalSection(&roomCs);
 
 		if (cnt != 0) { // 방이름 중복
+			LeaveCriticalSection(&roomCs);
 			msg += "이미 있는 방 이름입니다!\n";
 			msg += waitRoomMessage;
-
-			iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_WAITING);
+			InsertSendQueue(SEND_ME, msg, "", sock, STATUS_WAITING);
 			// 중복 케이스는 방 만들 수 없음
 		} else { // 방이름 중복 아닐 때만 개설
 				 // 새로운 방 정보 저장
-			ROOM_DATA roomData;
+			shared_ptr<ROOM_DATA> roomData = make_shared<ROOM_DATA>();
 			list<SOCKET> chatList;
 			chatList.push_back(sock);
-			// 방 리스트별 CS객체
-			CRITICAL_SECTION cs;
-			InitializeCriticalSection(&cs);
+			InitializeCriticalSection(&roomData->listCs);
 			// 방 리스트별 CS객체 Init
-			roomData.userList = chatList;
-			roomData.listCs = cs;
-
-			EnterCriticalSection(&roomCs);
+			roomData->userList = chatList;
 			roomMap[msg] = roomData;
+
 			LeaveCriticalSection(&roomCs);
 
 			// User의 상태 정보 바꾼다
+			EnterCriticalSection(&userCs);
 			strncpy((userMap.find(sock))->second.roomName, msg.c_str(),
 			NAME_SIZE);
 			(userMap.find(sock))->second.status =
 			STATUS_CHATTIG;
+			LeaveCriticalSection(&userCs);
 
 			msg += " 방이 개설되었습니다.";
 			msg += chatRoomMessage;
 			// cout << "현재 서버의 방 갯수 : " << roomMap.size() << endl;
+			InsertSendQueue(SEND_ME, msg, "", sock, STATUS_CHATTIG);
 
-			iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_CHATTIG);
 		}
 
 	} else if (direction == ROOM_ENTER) { // 방 입장 요청
 
 		// 유효성 검증 먼저
 		EnterCriticalSection(&roomCs);
-		int cnt = roomMap.count(msg);
-		LeaveCriticalSection(&roomCs);
-		if (cnt == 0) { // 방 못찾음
+
+		if (roomMap.find(msg) == roomMap.end()) { // 방 못찾음
+			LeaveCriticalSection(&roomCs);
 			msg = "없는 방 입니다!\n";
 			msg += waitRoomMessage;
-			iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_WAITING);
+
+			InsertSendQueue(SEND_ME, msg, "", sock, STATUS_WAITING);
+
 		} else {
+			// LeaveCriticalSection(&roomCs);
 
-			//방이 있으니까 유저를 insert
-			EnterCriticalSection(&(roomMap.find(msg)->second.listCs));
-			roomMap.find(msg)->second.userList.push_back(sock);
-			LeaveCriticalSection(&(roomMap.find(msg)->second.listCs));
-
+			EnterCriticalSection(&userCs);
 			strncpy(userMap.find(sock)->second.roomName, msg.c_str(),
 			NAME_SIZE);
 			userMap.find(sock)->second.status = STATUS_CHATTIG;
+			LeaveCriticalSection(&userCs);
 
 			string sendMsg = name;
 			sendMsg += " 님이 입장하셨습니다. ";
 			sendMsg += chatRoomMessage;
-
-			if (roomMap.find(msg) != roomMap.end()) { // 안전성 검사
-
-				iocpService->SendToRoomMsg(sendMsg.c_str(),
-						roomMap.find(msg)->second.userList,
-						STATUS_CHATTIG, &roomMap.find(msg)->second.listCs);
-
+			if (roomMap.find(msg) != roomMap.end()) {
+				EnterCriticalSection(&roomMap.find(msg)->second->listCs); // 방의 Lock
+				//방이 있으니까 유저를 insert
+				roomMap.find(msg)->second->userList.push_back(sock);
+				LeaveCriticalSection(&roomMap.find(msg)->second->listCs); // 방의 Lock
 			}
+			
+			LeaveCriticalSection(&roomCs); 
+			InsertSendQueue(SEND_ROOM, sendMsg, msg, 0, STATUS_CHATTIG);
 		}
 
 	} else if (direction == ROOM_INFO) { // 방 정보 요청시
@@ -394,10 +461,10 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 		} else {
 			str += "방 정보 리스트";
 			EnterCriticalSection(&roomCs);
-			unordered_map<string, ROOM_DATA> roomCopyMap = roomMap;
+			unordered_map<string, shared_ptr<ROOM_DATA>> roomCopyMap = roomMap;
 			LeaveCriticalSection(&roomCs);
 			// 동기화 범위 좁게 깊은복사
-			unordered_map<string, ROOM_DATA>::const_iterator iter;
+			unordered_map<string, shared_ptr<ROOM_DATA>>::const_iterator iter;
 
 			// 방정보를 문자열로 만든다
 			for (iter = roomCopyMap.begin(); iter != roomCopyMap.end();
@@ -406,13 +473,14 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 				str += "\n";
 				str += iter->first.c_str();
 				str += ":";
-				str += to_string((iter->second).userList.size());
+				str += to_string((iter->second)->userList.size());
 				str += "명";
 			}
 
 		}
 
-		iocpService->SendToOneMsg(str.c_str(), sock, STATUS_WAITING);
+		InsertSendQueue(SEND_ME, str, "", sock, STATUS_WAITING);
+
 	} else if (direction == ROOM_USER_INFO) { // 유저 정보 요청시
 		string str = "유저 정보 리스트";
 
@@ -420,19 +488,22 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 		unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap;
 		LeaveCriticalSection(&userCs);
 		// 동기화 범위 좁게 깊은복사
-		unordered_map<SOCKET, PER_HANDLE_DATA>::iterator iter;
+		unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
 		for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
+			if (str.length() >= 1024) {
+				break;
+			}
 			str += "\n";
 			str += (iter->second).userName;
 			str += ":";
 			if ((iter->second).status == STATUS_WAITING) {
-				str += "대기실 ";
+				str += "대기실";
 			} else {
 				str += (iter->second).roomName;
 			}
 		}
+		InsertSendQueue(SEND_ME, str, "", sock, STATUS_WAITING);
 
-		iocpService->SendToOneMsg(str.c_str(), sock, STATUS_WAITING);
 	} else if (direction == WHISPER) { // 귓속말
 
 		char *sArr[2] = { NULL, };
@@ -456,8 +527,8 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 				sendMsg = "자신에게 쪽지를 보낼수 없습니다\n";
 				sendMsg += waitRoomMessage;
 
-				iocpService->SendToOneMsg(sendMsg.c_str(), sock,
-				STATUS_WAITING);
+				InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+
 			} else {
 				bool find = false;
 				unordered_map<SOCKET, PER_HANDLE_DATA>::iterator iter;
@@ -470,8 +541,8 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 						sendMsg += " 님에게 온 귓속말 : ";
 						sendMsg += msg;
 
-						iocpService->SendToOneMsg(sendMsg.c_str(), iter->first,
-						STATUS_WHISPER);
+						InsertSendQueue(SEND_ME, sendMsg, "", iter->first, STATUS_WAITING);
+
 						break;
 					}
 				}
@@ -482,8 +553,7 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 					sendMsg = name;
 					sendMsg += " 님을 찾을 수 없습니다";
 
-					iocpService->SendToOneMsg(sendMsg.c_str(), sock,
-					STATUS_WAITING);
+					InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
 				}
 			}
 		}
@@ -500,14 +570,13 @@ void BusinessService::StatusWait(SOCKET sock, int status, int direction,
 		LeaveCriticalSection(&userCs);
 
 		string sendMsg = loginBeforeMessage;
-
-		iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_LOGOUT);
+		InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_LOGOUT);
 	} else { // 그외 명령어 입력
 		string sendMsg = errorMessage;
 		sendMsg += waitRoomMessage;
 		// 대기방의 오류이므로 STATUS_WAITING 상태로 전달한다
 
-		iocpService->SendToOneMsg(sendMsg.c_str(), sock, STATUS_WAITING);
+		InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
 	}
 
 	Vo vo; // DB SQL문에 필요한 Data
@@ -543,32 +612,32 @@ void BusinessService::StatusChat(SOCKET sock, int status, int direction,
 		sendMsg = name;
 		sendMsg += " 님이 나갔습니다!";
 
-		if (roomMap.find(userMap.find(sock)->second.roomName)
-				!= roomMap.end()) { // null 검사
+		// EnterCriticalSection(&roomCs);
+		// 방이름 임시 저장
+		roomName = string(userMap.find(sock)->second.roomName);
 
-			iocpService->SendToRoomMsg(sendMsg.c_str(),
-					roomMap.find(userMap.find(sock)->second.roomName)->second.userList,
-					STATUS_CHATTIG,
-					&roomMap.find(userMap.find(sock)->second.roomName)->second.listCs);
+		EnterCriticalSection(&roomMap.find(roomName)->second->listCs);
 
-			roomName = userMap.find(sock)->second.roomName;
-			// 방이름 임시 저장
-			strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE);
-			userMap.find(sock)->second.status = STATUS_WAITING;
-		}
+		roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
+
+		LeaveCriticalSection(&roomMap.find(roomName)->second->listCs);
+		
+		// LeaveCriticalSection(&roomCs);
+		// SendQueue에 Insert
+
+		InsertSendQueue(SEND_ROOM, sendMsg, userMap.find(sock)->second.roomName, 0, STATUS_CHATTIG);
 
 		msg = waitRoomMessage;
+		InsertSendQueue(SEND_ME, msg, "", sock, STATUS_WAITING);
 
-		iocpService->SendToOneMsg(msg.c_str(), sock, STATUS_WAITING);
-
-		// 나가는 사람 정보 out
-		EnterCriticalSection(&roomMap.find(roomName)->second.listCs);
-		(roomMap.find(roomName)->second).userList.remove(sock);
-		LeaveCriticalSection(&roomMap.find(roomName)->second.listCs);
-
+		EnterCriticalSection(&userCs);
+		strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
+		userMap.find(sock)->second.status = STATUS_WAITING; // 상태 변경
+		LeaveCriticalSection(&userCs);
+		
 		EnterCriticalSection(&roomCs);
-		if ((roomMap.find(roomName)->second).userList.size() == 0) { // 방인원 0명이면 방 삭제
-			DeleteCriticalSection(&roomMap.find(roomName)->second.listCs);
+		if ((roomMap.find(roomName)->second)->userList.size() == 0) { // 방인원 0명이면 방 삭제
+			DeleteCriticalSection(&roomMap.find(roomName)->second->listCs);
 			roomMap.erase(roomName);
 		}
 		LeaveCriticalSection(&roomCs);
@@ -581,10 +650,8 @@ void BusinessService::StatusChat(SOCKET sock, int status, int direction,
 
 		char roomName[NAME_SIZE];
 
-		EnterCriticalSection(&roomCs);
-
 		EnterCriticalSection(&userCs);
-		unordered_map<string, ROOM_DATA>::iterator it = roomMap.find(
+		unordered_map<string, shared_ptr<ROOM_DATA>>::iterator it = roomMap.find(
 				userMap.find(sock)->second.roomName);
 		strncpy(roomName, userMap.find(sock)->second.roomName, NAME_SIZE);
 		LeaveCriticalSection(&userCs);
@@ -605,13 +672,9 @@ void BusinessService::StatusChat(SOCKET sock, int status, int direction,
 
 		LeaveCriticalSection(&sqlCs);
 
-
 		if (it != roomMap.end()) { // null 검사
-			iocpService->SendToRoomMsg(sendMsg.c_str(), it->second.userList,
-			STATUS_CHATTIG,
-					&roomMap.find(userMap.find(sock)->second.roomName)->second.listCs);
+			InsertSendQueue(SEND_ROOM, sendMsg, userMap.find(sock)->second.roomName, 0, STATUS_CHATTIG);
 		}
-		LeaveCriticalSection(&roomCs);
 	}
 
 }
@@ -643,10 +706,12 @@ string BusinessService::DataCopy(LPPER_IO_DATA ioInfo, int *status,
 // 패킷 데이터 읽기
 short BusinessService::PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
 	// IO 완료후 동작 부분
+	
 	if (READ == ioInfo->serverMode) {
 		if (bytesTrans >= 2) {
 			copy(ioInfo->buffer, ioInfo->buffer + 2,
 				(char*)&(ioInfo->bodySize));
+		
 			CharPool* charPool = CharPool::getInstance();
 			ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte까지 카피 가능
 			if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
@@ -698,8 +763,6 @@ short BusinessService::PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
 		else { // body정보는 있음
 			copy(ioInfo->buffer, ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte),
 				((char*)ioInfo->recvBuffer) + ioInfo->recvByte); 
-
-			// cout << "bodySize readmore" << ioInfo->bodySize << endl;
 
 			if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
 				copy(ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte), ioInfo->buffer + bytesTrans, ioInfo->buffer);

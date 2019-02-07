@@ -28,12 +28,11 @@ public:
 	// 한명에게 메세지 전달
 	void SendToOneMsg(const char *msg, SOCKET mySock, int status);
 	// 같은 방의 사람들에게 메세지 전달
-	void SendToRoomMsg(const char *msg, const list<SOCKET> &lists, int status,
-			CRITICAL_SECTION *listCs);
+	void SendToRoomMsg(const char *msg, const list<SOCKET> &lists, int status);
 	// Recv 계속 공통함수
 	void RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo);
 
-// Recv 공통함수
+	// Recv 공통함수
 	void Recv(SOCKET sock);
 
 };

@@ -41,13 +41,12 @@ void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, int status) {
 }
 // 같은 방의 사람들에게 메세지 전달
 void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
-		int status, CRITICAL_SECTION *listCs) {
+		int status) {
 	MPool* mp = MPool::getInstance();
 	CharPool* charPool = CharPool::getInstance();
 
 	list<SOCKET>::const_iterator iter; // 변경 불가능 객체를 가리키는 반복자
 
-	EnterCriticalSection(listCs);
 	for (iter = lists.begin(); iter != lists.end(); iter++) {
 		// ioInfo를 각개 만들어서 보내자
 		LPPER_IO_DATA ioInfo = mp->Malloc();
@@ -68,9 +67,8 @@ void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
 		WSASend((*iter), &(ioInfo->wsaBuf), 1,
 			NULL, 0, &(ioInfo->overlapped), NULL);
 	}
-	LeaveCriticalSection(listCs);
-
 }
+
 // Recv 계속 공통함수
 void IocpService::RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo) {
 	DWORD recvBytes = 0;
