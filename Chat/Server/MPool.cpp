@@ -12,7 +12,6 @@ MPool::MPool() {
 	DWORD i = 0;
 	len = 2000;
 	memset((char*)data, 0, sizeof(PER_IO_DATA)* 2000);
-	InitializeCriticalSectionAndSpinCount(&cs, 2000);
 	for (i = 0; i < 2000; i++) {
 		poolQueue.push(data + (sizeof(PER_IO_DATA) * i));
 	}
@@ -21,15 +20,14 @@ MPool::MPool() {
 MPool* MPool::instance = nullptr;
 
 MPool::~MPool() {
-	DeleteCriticalSection(&cs);
+	char *popPoint;
 	while (!poolQueue.empty()) {
-		poolQueue.pop();
+		poolQueue.try_pop(popPoint);
 	}
 	free(data);
 }
 // 메모리풀 할당
 LPPER_IO_DATA MPool::Malloc() {
-	EnterCriticalSection(&cs);
 	if (poolQueue.empty()) { // 더 할당 필요한 경우 len(초기 blocks만큼 추가)
 		char* nextP = new char[sizeof(PER_IO_DATA)* len];
 		cout << "MPool More" << endl;
@@ -38,16 +36,13 @@ LPPER_IO_DATA MPool::Malloc() {
 			poolQueue.push(nextP + (sizeof(PER_IO_DATA)* j));
 		}
 	}
-	LPPER_IO_DATA pointer = (LPPER_IO_DATA) poolQueue.front();
-	poolQueue.pop();
-	LeaveCriticalSection(&cs);
-	return pointer;
+	char* pointer;
+	poolQueue.try_pop(pointer);
+	return (LPPER_IO_DATA) pointer;
 }
 // 메모리풀 반환
 void MPool::Free(LPPER_IO_DATA freePoint) { // 반환한 포인터의 idx를 원상복구
-	EnterCriticalSection(&cs);
 	memset((char*)freePoint, 0, sizeof(PER_IO_DATA));
 	poolQueue.push((char*) freePoint);
-	LeaveCriticalSection(&cs);
 }
 

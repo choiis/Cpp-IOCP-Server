@@ -10,7 +10,7 @@
 
 #include <iostream>
 #include <winsock2.h>
-#include <queue>
+#include <concurrent_queue.h>
 #include "common.h"
 
 #define BLOCK_SIZE 1024
@@ -18,9 +18,8 @@
 class CharPool {
 private:
 	char* data;
-	queue<char*> poolQueue;
+	Concurrency::concurrent_queue<char*> poolQueue;
 	DWORD len;
-	CRITICAL_SECTION cs; // 메모리풀 동기화 크리티컬섹션
 	CharPool();
 	~CharPool();
 	static CharPool* instance; // Singleton Instance

@@ -10,15 +10,14 @@
 
 #include <iostream>
 #include <winsock2.h>
-#include <queue>
+#include <concurrent_queue.h>
 #include "common.h"
 
 class MPool {
 private:
 	char* data;
 	DWORD len;
-	queue<char*> poolQueue;
-	CRITICAL_SECTION cs; // 메모리풀 동기화 크리티컬섹션
+	Concurrency::concurrent_queue<char*> poolQueue;
 	MPool();
 	~MPool();
 	static MPool* instance; // Singleton Instance

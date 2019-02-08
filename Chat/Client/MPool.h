@@ -1,24 +1,23 @@
 /*
- * MPool.h
- *
- *  Created on: 2019. 1. 17.
- *      Author: choiis1207
- */
+* MPool.h
+*
+*  Created on: 2019. 1. 17.
+*      Author: choiis1207
+*/
 
 #ifndef MPOOL_H_
 #define MPOOL_H_
 
 #include <iostream>
 #include <winsock2.h>
-#include <queue>
+#include <concurrent_queue.h>
 #include "common.h"
 
 class MPool {
 private:
 	char* data;
 	DWORD len;
-	queue<char*> poolQueue;
-	CRITICAL_SECTION cs; // 메모리풀 동기화 크리티컬섹션
+	Concurrency::concurrent_queue<char*> poolQueue;
 	MPool();
 	~MPool();
 	static MPool* instance; // Singleton Instance
@@ -26,7 +25,7 @@ public:
 	// Singleton Instance 를 반환
 	static MPool* getInstance() {
 		if (instance == nullptr) {
-			cout << "메모리풀 1000개 할당!" << endl;
+			cout << "ioInfo 메모리풀 2000개 할당!" << endl;
 			instance = new MPool();
 		}
 		return instance;

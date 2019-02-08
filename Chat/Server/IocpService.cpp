@@ -50,6 +50,8 @@ void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
 	for (iter = lists.begin(); iter != lists.end(); iter++) {
 		// ioInfo를 각개 만들어서 보내자
 		LPPER_IO_DATA ioInfo = mp->Malloc();
+
+		memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 		unsigned short len = min((unsigned short)strlen(msg) + 11, BUF_SIZE); // 최대 보낼수 있는 내용 502Byte
 
 		char* packet = charPool->Malloc(); // 512 Byte까지 읽기 가능

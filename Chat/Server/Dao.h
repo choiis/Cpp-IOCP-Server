@@ -13,9 +13,7 @@
 #include <sqltypes.h>
 #include <sql.h>
 #include <sqlext.h>
-#include <sys/timeb.h>
 #include <string>
-#include <time.h>
 #include "Vo.h"
 
 using std::string;

@@ -6,14 +6,11 @@
 // Description : Hello World in C++, Ansi-style
 //============================================================================
 #include <iostream>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <winsock2.h>
 #include <windows.h>
 #include <process.h>
 #include <regex>
-#include "common.h"
 #include "MPool.h"
 #include "CharPool.h"
 
@@ -466,9 +463,7 @@ int main() {
 	SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 12);
 	while (1) {
 
-		cout << "포트번호를 입력해 주세요 :";
-		string port;
-		cin >> port;
+		string port = "1234";
 
 		servAddr.sin_port = htons(atoi(port.c_str()));
 

@@ -7,8 +7,6 @@
 //============================================================================
 
 #include <iostream>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <winsock2.h>
 #include <process.h>
@@ -17,7 +15,6 @@
 #include <unordered_map>
 #include <ctime>
 #include <string>
-#include "common.h"
 #include "MPool.h"
 #include "CharPool.h"
 #include <list>
@@ -26,8 +23,6 @@
 using namespace std;
 
 CRITICAL_SECTION userCs;
-
-HANDLE* handles;
 
 typedef struct { // socket info
 	SOCKET Sock;
@@ -160,6 +155,7 @@ void SendMsg(SOCKET clientSock, const char* msg, int direction) {
 	MPool* mp = MPool::getInstance();
 	LPPER_IO_DATA ioInfo = mp->Malloc();
 
+	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 	unsigned short len = min((unsigned short)strlen(msg) + 11, BUF_SIZE); // 최대 보낼수 있는 내용 500Byte
 	CharPool* charPool = CharPool::getInstance();
 	char* packet = charPool->Malloc(); // 512 Byte까지 읽기 가능
@@ -280,7 +276,7 @@ unsigned WINAPI SendMsgThread(void *arg) {
 			info.job = 0;
 			clientQueue->pushMakeQueue(info);
 		}
-		else {
+		else { // Send안할 땐 실행중지
 			Sleep(1);
 		}
 	}
@@ -349,7 +345,6 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 				}
 			}
 			else if (cStatus == STATUS_WAITING) {
-				Sleep(1);
 				int directionNum = (rand() % 10);
 				if (directionNum <= 6) { // 70퍼센트 방입장
 					int randNum1 = (rand() % 2);
@@ -380,9 +375,9 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 				}
 			}
 			else if (cStatus == STATUS_CHATTIG) {
-				int directionNum = (rand() % 60);
+				int directionNum = (rand() % 70);
 				string msg = "";
-				if (directionNum == 59){
+				if (directionNum == 1) {
 					msg = "\\out";
 				}
 				else {
@@ -396,7 +391,7 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 			info.job = 0;
 			clientQueue->pushSendQueue(info);
 		}
-		else {
+		else { // Make안할 땐 실행중지
 			Sleep(1);
 		}
 	}
@@ -496,9 +491,10 @@ int main() {
 		exit(1);
 	}
 
-	cout << "포트번호를 입력해 주세요 :";
-	string port;
-	cin >> port;
+	string port = "1234";
+
+	MPool* mp = MPool::getInstance(); // 메모리풀 초기화 지점
+	CharPool* charPool = CharPool::getInstance(); // 메모리풀 초기화 지점
 
 	DWORD clientCnt;
 	cout << "클라이언트 수를 입력해 주세요";
@@ -568,26 +564,27 @@ int main() {
 	SYSTEM_INFO sysInfo;
 	GetSystemInfo(&sysInfo);
 	int process = sysInfo.dwNumberOfProcessors;
-	handles = new HANDLE[(process * 2) / 3];
 	// 수신 스레드 동작
 	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다
 	// RecvMsg에서 Recv가 완료되면 동작할 부분이 있다
-	for (int i = 0; i < (process * 2)/ 3; i++) {
-		handles[i] = (HANDLE)_beginthreadex(NULL, 0, RecvMsgThread, (LPVOID)hComPort, 0,
+	for (int i = 0; i < 2 * process ; i++) {
+		_beginthreadex(NULL, 0, RecvMsgThread, (LPVOID)hComPort, 0,
 			NULL);
 	}
 
 	// 동작을 만들어줄 스레드 동작
 	// 만들어진 동작큐를 hComPort SendMsgThread에서 처리하게 된다
-	_beginthreadex(NULL, 0, MakeMsgThread,
-		NULL, 0,
-		NULL);
-
+	for (int i = 0; i < process / 2; i++)
+	{
+		_beginthreadex(NULL, 0, MakeMsgThread,
+			NULL, 0,
+			NULL);
+	}
 
 	// 송신 스레드 동작
 	// Thread안에서 clientSocket으로 Send해줄거니까 인자로 넘겨준다
 	// CP랑 Send는 연결 안되어있음 GetQueuedCompletionStatus에서 Send 완료처리 필요없음
-	for (int i = 0; i < process / 3; i++)
+	for (int i = 0; i < process / 2; i++)
 	{
 		_beginthreadex(NULL, 0, SendMsgThread,
 			NULL, 0,
@@ -609,7 +606,7 @@ int main() {
 	}
 	// 임계영역 Object 반환
 	DeleteCriticalSection(&userCs);
-	delete[] handles;
+
 	delete clientQueue;
 	WSACleanup();
 	return 0;

@@ -7,14 +7,9 @@
 //============================================================================
 #include <iostream>
 #include <stdio.h>
-#include <string>
 #include <stdlib.h>
 #include <process.h>
-#include <winsock2.h>
-#include <unordered_set>
 #include "BusinessService.h"
-#include "common.h"
-#include "CharPool.h"
 
 using namespace std;
 
@@ -203,6 +198,9 @@ int main(int argc, char* argv[]) {
 	SOCKET hServSock;
 	SOCKADDR_IN servAdr;
 
+	SetConsoleTextAttribute(
+		GetStdHandle(STD_OUTPUT_HANDLE), 10);
+
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
 		cout << "WSAStartup() error!" << endl;
 		exit(1);
@@ -250,9 +248,7 @@ int main(int argc, char* argv[]) {
 	hServSock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
 	WSA_FLAG_OVERLAPPED);
 
-	string port;
-	cout << "포트번호를 입력해 주세요" << endl;
-	cin >> port;
+	string port ="1234";
 
 	memset(&servAdr, 0, sizeof(servAdr));
 	servAdr.sin_family = PF_INET;
