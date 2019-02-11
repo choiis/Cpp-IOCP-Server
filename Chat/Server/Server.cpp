@@ -66,7 +66,6 @@ unsigned WINAPI WorkThread(void *arg) {
 				if (liveSocket.find(jobData.socket) == liveSocket.end()) {
 					continue;
 				}
-
 				// DataCopy에서 받은 ioInfo 모두 free
 				if (!businessService->SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
 					// 로그인 이전 로직 처리
@@ -77,7 +76,7 @@ unsigned WINAPI WorkThread(void *arg) {
 
 					int status = businessService->BusinessService::GetStatus(
 						jobData.socket);
-
+					
 					if (status == STATUS_WAITING && jobData.direction != -1) { // 대기실 케이스
 						// 대기실 처리 함수
 						businessService->StatusWait(jobData.socket, status, jobData.direction,
@@ -189,6 +188,56 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 	return 0;
 }
 
+// UDP File 전송 스레드
+unsigned WINAPI UdpThread(void* arg) {
+
+	// SOCKET복구
+	SOCKET sock = *((SOCKET*)arg);
+
+	while (true) {
+		SOCKADDR_IN client_addr;
+		int len_addr = sizeof(client_addr);
+		int totalBufferNum;
+		int readBytes;
+		long fileSize;
+		long totalReadBytes;
+
+		char buf[BUF_SIZE];
+
+		FILE * fp;
+
+		readBytes = recvfrom(sock, buf, BUF_SIZE, 0, (SOCKADDR*)&client_addr, &len_addr);
+		fileSize = atol(buf); // 먼저 파일 사이즈를 받는다
+		totalReadBytes = 0;
+
+		char fileName[BUF_SIZE];// 두번째로 파일 이름을 받는다
+		readBytes = recvfrom(sock, fileName, BUF_SIZE, 0, (SOCKADDR*)&client_addr, &len_addr);
+		fileName[readBytes] = '\0';
+		
+		char fileDir[BUF_SIZE] = "C:/Users/choiis1207/Downloads/"; // 다운로드 폴더로 경로 지정
+		strcat(fileDir, fileName);
+		fp = fopen(fileDir, "wb");
+		cout << "받을 파일명 " << fileName << endl;
+		while (totalReadBytes < fileSize) { // 실제 파일 읽기 과정
+			readBytes = recvfrom(sock, buf, BUF_SIZE, 0, (SOCKADDR*)&client_addr, &len_addr);
+			totalReadBytes += readBytes;
+			printf("In progress: %.1lf %% 완료 \n",  (100 *  (double)totalReadBytes) / (double) fileSize);
+			if (readBytes > 0) {
+				fwrite(buf, sizeof(char), readBytes, fp);
+				readBytes = sendto(sock, buf, 10, 0, (SOCKADDR*)&client_addr, sizeof(client_addr));
+			}
+			if (readBytes == SOCKET_ERROR)
+			{
+				cout << "ERROR" << endl;
+				break;
+			}
+		}
+		fclose(fp); // 닫기
+		cout << "recv file name " << fileName  << " 다운로드 완료" << endl;
+	}
+}
+
+
 int main(int argc, char* argv[]) {
 
 	WSADATA wsaData;
@@ -210,6 +259,45 @@ int main(int argc, char* argv[]) {
 	hComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 	GetSystemInfo(&sysInfo);
 
+	// Overlapped IO가능 소켓을 만든다
+	// TCP 통신할것
+	hServSock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
+		WSA_FLAG_OVERLAPPED);
+
+	string port = "1234";
+
+	memset(&servAdr, 0, sizeof(servAdr));
+	servAdr.sin_family = PF_INET;
+	servAdr.sin_addr.s_addr = htonl(INADDR_ANY); // INADDR_ANY뜻은 어느 IP에서 접속이 와도 요청 수락한다는 뜻
+	servAdr.sin_port = htons(atoi(port.c_str()));
+
+	if (bind(hServSock, (SOCKADDR*)&servAdr, sizeof(servAdr)) == SOCKET_ERROR) {
+		cout << "bind() error!" << endl;
+		exit(1);
+	}
+
+	if (listen(hServSock, 5) == SOCKET_ERROR) {
+		// listen의 두번째 인자는 접속 대기 큐의 크기
+		// accept작업 다 끝나기전에 대기 할 공간
+		cout << "listen() error!" << endl;
+		exit(1);
+	}
+	cout << "Server ready listen" << endl;
+	cout << "port number : " << port << endl;
+
+	SOCKET udpSocket = socket(PF_INET, SOCK_DGRAM, 0);
+	struct sockaddr_in local_addr;
+
+	memset(&local_addr, 0, sizeof(local_addr));
+	local_addr.sin_family = AF_INET;
+	local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	local_addr.sin_port = htons(atoi("1235")); // UDP port는 1235번
+
+	if (bind(udpSocket, (SOCKADDR *)&local_addr, sizeof(local_addr)) == SOCKET_ERROR) {
+		cout << "bind() error!" << endl;
+		exit(1);
+	}
+		
 	int process = sysInfo.dwNumberOfProcessors;
 	cout << "Server CPU num : " << process << endl;
 
@@ -242,39 +330,19 @@ int main(int argc, char* argv[]) {
 	for (int i = 0; i < (process * 2) / 3; i++) {
 		_beginthreadex(NULL, 0, SendThread, NULL, 0, NULL);
 	}
-	
-	// Overlapped IO가능 소켓을 만든다
-	// TCP 통신할것
-	hServSock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
-	WSA_FLAG_OVERLAPPED);
 
-	string port ="1234";
-
-	memset(&servAdr, 0, sizeof(servAdr));
-	servAdr.sin_family = PF_INET;
-	servAdr.sin_addr.s_addr = htonl(INADDR_ANY); // INADDR_ANY뜻은 어느 IP에서 접속이 와도 요청 수락한다는 뜻
-	servAdr.sin_port = htons(atoi(port.c_str()));
-
-	if (bind(hServSock, (SOCKADDR*) &servAdr, sizeof(servAdr)) == SOCKET_ERROR) {
-		cout << "bind() error!" << endl;
-		exit(1);
-	}
-
-	if (listen(hServSock, 5) == SOCKET_ERROR) {
-		// listen의 두번째 인자는 접속 대기 큐의 크기
-		// accept작업 다 끝나기전에 대기 할 공간
-		cout << "listen() error!" << endl;
-		exit(1);
-	}
-
-	cout << "Server ready listen" << endl;
-	cout << "port number : " << port << endl;
+	// Thread Pool UDP 파일 전송받기 스레드 미리 생성
+	_beginthreadex(NULL, 0, UdpThread, (LPVOID)&udpSocket, 0, NULL);
 
 	while (true) {
 		SOCKET hClientSock;
 		SOCKADDR_IN clntAdr;
 		int addrLen = sizeof(clntAdr);
 		hClientSock = accept(hServSock, (SOCKADDR*) &clntAdr, &addrLen);
+
+		// cout << "hClientSock " << hClientSock << endl;
+		// cout << "sin_addr " << inet_ntoa(clntAdr.sin_addr) << endl;
+		// cout << "sin_port " << clntAdr.sin_port << endl;
 
 		EnterCriticalSection(&liveSocketCs);
 		liveSocket.insert(hClientSock);

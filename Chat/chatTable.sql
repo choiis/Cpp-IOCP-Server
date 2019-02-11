@@ -43,3 +43,15 @@ message varchar(512) not null
 alter table cso_chatting
 add constraint pk_cso_chatting primary key(logdate , nickname);
 
+CREATE table cso_relation(
+relationfrom varchar(10) COLLATE KOREAN_WANSUNG_CS_AS not null,
+relationto varchar(10) COLLATE KOREAN_WANSUNG_CS_AS not null,
+relationcode int not null,
+regdate datetime not null
+);
+
+alter table cso_relation
+add constraint pk_cso_relation primary key(relationfrom , relationcode , relationto);
+
+alter table cso_relation
+add constraint fk_cso_relation foreign key(relationfrom) references cso_id(userid) on delete cascade;

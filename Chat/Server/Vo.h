@@ -12,17 +12,19 @@
 
 class Vo {
 private:
-	char userId[10];
+	char userId[20];
 	char nickName[20];
 	char roomName[20];
 	char msg[512];
 	int status;
 	int direction;
 	char password[10];
+	char relationto[20];
+	int relationcode;
 public:
 	Vo();
 
-	Vo(const char* userId, const char* nickName, const char* roomName, const char* msg, int status, int direction, const char* password);
+	Vo(const char* userId, const char* nickName, const char* roomName, const char* msg, int status, int direction, const char* password, const char* relationto, int relationcode);
 
 	virtual ~Vo();
 
@@ -54,6 +56,14 @@ public:
 		strncpy(this->msg, msg, 512);
 	}
 
+	void setRelationto(const char* relationto) {
+		strncpy(this->relationto, relationto, 512);
+	}
+
+	void setRelationcode(const int relationcode) {
+		this->relationcode = relationcode;
+	}
+	
 	const char* getNickName() const {
 		return nickName;
 	}
@@ -80,6 +90,14 @@ public:
 
 	const char* getPassword() const {
 		return password;
+	}
+
+	const char* getRelationto() const {
+		return relationto;
+	}
+
+	int getRelationcode() const {
+		return relationcode;
 	}
 };
 

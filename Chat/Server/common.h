@@ -35,14 +35,19 @@ using namespace std;
 #define WHISPER 6
 #define ROOM_INFO 7
 #define ROOM_USER_INFO 8
+#define FRIEND_INFO 9
+#define FRIEND_ADD 10
+#define FRIEND_GO 11
+#define FRIEND_DELETE 12
+#define LOG_OUT 13
 // 로그인 중복 방지
 #define NOW_LOGOUT 0
 #define NOW_LOGIN 1
 
 #define loginBeforeMessage "1.계정생성 2.로그인하기 3.종료 4.콘솔지우기"
-#define waitRoomMessage	"1.방 정보 보기 2.방 만들기 3.방 입장하기 4.유저 정보 5.귓속말 6.로그아웃 7.콘솔지우기"
+#define waitRoomMessage	"1.방 정보 보기 2.방 만들기 3.방 입장하기 4.유저 정보 5.친구 정보 6.친구 관리 7.귓속말 8.로그아웃 9.콘솔지우기"
 #define errorMessage "잘못된 명령어 입니다"
-#define chatRoomMessage  "나가시려면 \\out을 콘솔지우기는 \\clear를 입력하세요"
+#define chatRoomMessage  "나가시려면 \\out을 콘솔지우기는 \\clear를 친구추가는 \\add 닉네임을 파일전송은\\send를 입력하세요"
 
 #define SEND_ME 1
 #define SEND_ROOM 2

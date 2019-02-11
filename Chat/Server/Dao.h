@@ -14,7 +14,10 @@
 #include <sql.h>
 #include <sqlext.h>
 #include <string>
+#include <vector>
 #include "Vo.h"
+
+using namespace std;
 
 using std::string;
 
@@ -42,5 +45,15 @@ public:
 	void InsertDirection(Vo& vo);
 
 	void InsertChatting(Vo& vo);
+
+	int InsertRelation(Vo& vo);
+
+	Vo& findUserId(Vo& vo);
+
+	vector<Vo> selectFriends(Vo& vo);
+
+	Vo& selectOneFriend(Vo& vo);
+
+	int DeleteRelation(Vo& vo);
 };
 #endif /* DAO_H_ */

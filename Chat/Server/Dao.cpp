@@ -49,7 +49,7 @@ Vo& Dao::selectUser(Vo& vo){
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	char query[512] = "select userid,password,nickname from cso_id where userid = ? ";
 
-	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 10, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
+	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
 	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
 	
 	char userid[10];
@@ -71,8 +71,8 @@ Vo& Dao::selectUser(Vo& vo){
 		vo.setUserId("");
 	}
 
-	if (hStmt != SQL_NULL_HSTMT)
-		SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+	
+	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
 
 	LeaveCriticalSection(&this->cs);
 	return vo;
@@ -88,7 +88,7 @@ void Dao::UpdateUser(Vo& vo){
 
 	char query[512] = "update cso_id set lastlogdate = getdate() where userid = ? ";
 
-	res = SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 10, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
+	res = SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
 
 	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
 
@@ -105,7 +105,7 @@ void Dao::InsertUser(Vo& vo) {
 	
 	char query[512] = "insert into cso_id(userid, password , nickname , regdate) values(? ,? ,? ,getdate() ) ";
 	
-	res = SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 10, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
+	res = SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
 	res = SQLBindParameter(hStmt, 2, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 10, 0, (SQLCHAR*)vo.getPassword(), sizeof(vo.getPassword()), NULL);
 	res = SQLBindParameter(hStmt, 3, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getNickName(), sizeof(vo.getNickName()), NULL);
 	
@@ -125,7 +125,7 @@ void Dao::InsertLogin(Vo& vo) {
 
 	char query[512] = "insert into cso_login(userid, logindate , nickname) values(? ,getdate() ,? ) ";
 	
-	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 10, 0, (SQLCHAR*) vo.getUserId(), sizeof(vo.getUserId()), NULL);
+	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
 	SQLBindParameter(hStmt, 2, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*) vo.getNickName(), sizeof(vo.getNickName()), NULL);
 
 	SQLPrepare(hStmt, (SQLCHAR*) query, SQL_NTS);
@@ -176,4 +176,153 @@ void  Dao::InsertChatting(Vo& vo) {
 	res = SQLExecute(hStmt);
 	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
 	LeaveCriticalSection(&this->cs);
+}
+
+// 친구 또는 차단관계 insert
+int Dao::InsertRelation(Vo& vo){
+	EnterCriticalSection(&this->cs);
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+
+	char query[512] = "insert into cso_relation  values(? , ? , ? ,getdate())";
+
+	int relation = vo.getRelationcode();; // relation이 1 친구관계 2차단
+
+	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
+	SQLBindParameter(hStmt, 2, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getRelationto(), sizeof(vo.getRelationto()), NULL);
+	SQLBindParameter(hStmt, 3, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &relation, 0, NULL);
+
+	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
+
+	res = SQLExecute(hStmt);
+	int result = res;
+	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+	LeaveCriticalSection(&this->cs);
+	return result;
+}
+
+// ID정보 있는지 확인
+Vo& Dao::findUserId(Vo& vo) {
+	EnterCriticalSection(&this->cs);
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+	char query[512] = "select userid, nickname from cso_id where nickname = ? ";
+
+	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getNickName(), sizeof(vo.getNickName()), NULL);
+	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
+
+	char userid[10];
+	char nickname[20];
+	SQLINTEGER num1, num2;
+
+	SQLBindCol(hStmt, 1, SQL_C_CHAR, userid, sizeof(userid), &num1);
+	SQLBindCol(hStmt, 2, SQL_C_CHAR, nickname, sizeof(nickname), &num2);
+
+	res = SQLExecute(hStmt);
+
+	Vo vo2;
+
+	if (SQLFetch(hStmt) != SQL_NO_DATA) {
+		vo2.setRelationto(userid);
+		vo2.setNickName(nickname);
+	}
+	else {
+		vo2.setRelationto("");
+	}
+
+	
+	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+
+	LeaveCriticalSection(&this->cs);
+	return vo2;
+}
+// 친구 정보 select
+vector<Vo> Dao::selectFriends(Vo& vo) {
+	EnterCriticalSection(&this->cs);
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+	char query[1024] = "select T1.relationfrom, T1.relationto, T2.nickname from cso_relation T1, cso_id T2	where T1.relationto = T2.userid	and T1.relationfrom = ? and T1.relationcode = 1";
+
+	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
+	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
+
+	char userid[10];
+	char relationto[10];
+	char nickname[20];
+	SQLINTEGER num1, num2, num3;
+
+	SQLBindCol(hStmt, 1, SQL_C_CHAR, userid, sizeof(userid), &num1);
+	SQLBindCol(hStmt, 2, SQL_C_CHAR, relationto, sizeof(relationto), &num2);
+	SQLBindCol(hStmt, 3, SQL_C_CHAR, nickname, sizeof(nickname), &num3);
+
+	res = SQLExecute(hStmt);
+
+	vector<Vo> vec;
+
+	while (SQLFetch(hStmt) != SQL_NO_DATA) {
+		Vo vo;
+		vo.setUserId(userid);
+		vo.setRelationto(relationto);
+		vo.setNickName(nickname);
+		vec.push_back(vo);
+	}
+
+	
+	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+
+	LeaveCriticalSection(&this->cs);
+	return vec;
+}
+
+// 친구한명정보 select
+Vo& Dao::selectOneFriend(Vo& vo) {
+	EnterCriticalSection(&this->cs);
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+	char query[1024] = "select T1.relationfrom, T1.relationto, T2.nickname from cso_relation T1, cso_id T2	where T1.relationto = T2.userid	and T1.relationfrom = ? and T2.nickname = ? and T1.relationcode = 1";
+
+	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
+	SQLBindParameter(hStmt, 2, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getRelationto(), sizeof(vo.getRelationto()), NULL);
+	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
+
+	char userid[20];
+	char relationto[20];
+	char nickname[20];
+	SQLINTEGER num1, num2, num3;
+
+	SQLBindCol(hStmt, 1, SQL_C_CHAR, userid, sizeof(userid), &num1);
+	SQLBindCol(hStmt, 2, SQL_C_CHAR, relationto, sizeof(relationto), &num2);
+	SQLBindCol(hStmt, 3, SQL_C_CHAR, nickname, sizeof(nickname), &num3);
+
+	res = SQLExecute(hStmt);
+
+	Vo vo2;
+	if (SQLFetch(hStmt) != SQL_NO_DATA) {
+		vo2.setUserId(userid);
+		vo2.setRelationto(relationto);
+		vo2.setNickName(nickname);
+	}
+
+	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+
+	LeaveCriticalSection(&this->cs);
+	return vo2;
+}
+
+// 친구 또는 차단관계 delete
+int Dao::DeleteRelation(Vo& vo) {
+	EnterCriticalSection(&this->cs);
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+
+	char query[512] = "delete from cso_relation where relationfrom = ? and relationcode = ? and relationto = (select userid from cso_id where nickname = ?)";
+
+	int relation = vo.getRelationcode();; // relation이 1 친구관계 2차단
+
+	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
+	SQLBindParameter(hStmt, 2, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &relation, 0, NULL);
+	SQLBindParameter(hStmt, 3, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getNickName(), sizeof(vo.getNickName()), NULL);
+
+	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
+
+	res = SQLExecute(hStmt);
+	int result = res;
+	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+	LeaveCriticalSection(&this->cs);
+	return result;
 }

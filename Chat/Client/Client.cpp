@@ -11,6 +11,7 @@
 #include <windows.h>
 #include <process.h>
 #include <regex>
+#include <algorithm>
 #include "MPool.h"
 #include "CharPool.h"
 
@@ -94,11 +95,64 @@ void SendMsg(SOCKET clientSock, const char* msg, int status, int direction) {
 
 }
 
+void FileSend(SOCKET socket, sockaddr_in sockAddr, string fileDir) {
+	FILE* fp = fopen(fileDir.c_str(), "rb");
+	if (fp == nullptr) {
+		cout << "존재하지 않는 파일입니다" << endl;
+		return;
+	}
+	else {
+		int idx;
+		while ((idx = fileDir.find("/")) != -1) {
+			fileDir.erase(0, idx + 1);
+		}
+		char buf[BUF_SIZE];
+		fseek(fp, 0, SEEK_END);
+		int file_size = ftell(fp);
+		int totalBufferNum = file_size / sizeof(buf)+1;
+		fseek(fp, 0, SEEK_SET);
+		int BufferNum = 0;
+		int totalSendBytes = 0;
+
+		_snprintf(buf, sizeof(buf), "%d", file_size);
+		int sendBytes = sendto(socket, buf, sizeof(char)* 1024, 0, (SOCKADDR *)&sockAddr, sizeof(sockAddr));
+		char fileName[BUF_SIZE];
+		strncpy(fileName, fileDir.c_str(), BUF_SIZE);
+	
+		sendBytes = sendto(socket, fileName, strlen(fileName), 0, (SOCKADDR *)&sockAddr, sizeof(sockAddr));
+
+		while ((sendBytes = fread(buf, sizeof(char), sizeof(buf), fp))>0) {
+			sendto(socket, buf, sendBytes, 0, (SOCKADDR *)&sockAddr, sizeof(sockAddr));
+			BufferNum++;
+			totalSendBytes += sendBytes;
+			// printf("In progress: %d/%dByte(s) [%d%%]\n", totalSendBytes, file_size, ((BufferNum * 100) / totalBufferNum));
+			while (recvfrom(socket, buf, BUF_SIZE, 0, NULL, NULL) != 10)
+			{
+				sendto(socket, buf, sendBytes, 0, (SOCKADDR *)&sockAddr, sizeof(sockAddr));
+			}
+		}
+		
+		cout << fileName << " 파일 " << file_size << " Byte가 서버로 전달되었습니다" << endl;
+	}
+
+}
+
+// 경로 표시 한가지로 통일
+void replaceFileDir(string& fileDir) {
+	replace(fileDir.begin(), fileDir.end(), '\\', '/');
+}
 
 // 송신을 담당할 스레드
 unsigned WINAPI SendMsgThread(void *arg) {
 	// 넘어온 clientSocket을 받아줌
 	SOCKET clientSock = *((SOCKET*)arg);
+	// File전송에 필요한 UDP Socket정보
+	SOCKET udpSocket = socket(PF_INET, SOCK_DGRAM, 0);
+	struct sockaddr_in udpAddr;
+	memset(&udpAddr, 0, sizeof(udpAddr));
+	udpAddr.sin_family = AF_INET;
+	udpAddr.sin_addr.s_addr = inet_addr("10.10.55.62");
+	udpAddr.sin_port = htons(atoi("1235"));
 
 	while (1) {
 		string msg;
@@ -210,7 +264,30 @@ unsigned WINAPI SendMsgThread(void *arg) {
 			else if (msg.compare("4") == 0) { // 유저 정보 요청
 				direction = ROOM_USER_INFO;
 			}
-			else if (msg.compare("5") == 0) { // 귓속말
+			else if (msg.compare("5") == 0) { // 친구 정보 요청
+				direction = FRIEND_INFO;
+			}
+			else if (msg.compare("6") == 0) { // 친구관리
+				cout << "1.친구 추가 2.친구에게 가기 3.친구 삭제 " << endl;
+				string direct;
+				getline(cin, direct);
+				if (direct.compare("1") == 0) {
+					cout << "함께할 친구 닉네임을 입력해 주세요" << endl;
+					getline(cin, msg);
+					direction = FRIEND_ADD;
+				}
+				if (direct.compare("2") == 0) { // 친구에게 가기
+					cout << "함께할 친구 닉네임을 입력해 주세요" << endl;
+					getline(cin, msg);
+					direction = FRIEND_GO;
+				}
+				else if (direct.compare("3") == 0) { // 친구 삭제
+					cout << "삭제할 친구 닉네임을 입력해 주세요" << endl;
+					getline(cin, msg);
+					direction = FRIEND_DELETE;
+				}
+			}
+			else if (msg.compare("7") == 0) { // 귓속말
 
 				string Msg;
 				cout << "귓속말 대상을 입력해 주세요" << endl;
@@ -221,10 +298,10 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				msg.append(Msg); // 대상
 				direction = WHISPER;
 			}
-			else if (msg.compare("6") == 0) { // 로그아웃
+			else if (msg.compare("8") == 0) { // 로그아웃
 				direction = LOG_OUT;
 			}
-			else if (msg.compare("7") == 0) { // 콘솔지우기
+			else if (msg.compare("9") == 0) { // 콘솔지우기
 				system("cls");
 				cout << waitRoomMessage << endl;
 				continue;
@@ -234,6 +311,14 @@ unsigned WINAPI SendMsgThread(void *arg) {
 			if (msg.compare("\\clear") == 0) { // 콘솔창 clear
 				system("cls");
 				cout << chatRoomMessage << endl;
+				continue;
+			}
+			else if (msg.find("\\send") != -1) { // 파일전송
+				cout << "파일 경로를 입력해 주세요" << endl;
+				string fileDir;
+				getline(cin, fileDir);
+				replaceFileDir(fileDir);
+				FileSend(udpSocket, udpAddr, fileDir);
 				continue;
 			}
 		}
@@ -458,7 +543,7 @@ int main() {
 
 	memset(&servAddr, 0, sizeof(servAddr));
 	servAddr.sin_family = PF_INET;
-	servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	servAddr.sin_addr.s_addr = inet_addr("10.10.55.62");
 
 	SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 12);
 	while (1) {
