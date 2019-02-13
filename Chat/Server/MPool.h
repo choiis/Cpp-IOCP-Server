@@ -25,7 +25,7 @@ public:
 	// Singleton Instance 를 반환
 	static MPool* getInstance() {
 		if (instance == nullptr) {
-			cout << "ioInfo 메모리풀 2000개 할당!" << endl;
+			cout << "ioInfo 메모리풀 10000개 할당!" << endl;
 			instance = new MPool();
 		}
 		return instance;

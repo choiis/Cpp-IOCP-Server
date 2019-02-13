@@ -8,11 +8,11 @@
 #include "CharPool.h"
 // 생성자
 CharPool::CharPool() {
-	data = (char*)malloc(BLOCK_SIZE * 2000);
+	data = (char*)malloc(BLOCK_SIZE * 10000);
 	DWORD i = 0;
-	len = 2000;
-	memset((char*)data, 0, BLOCK_SIZE* 2000);
-	for (i = 0; i < 2000; i++) {
+	len = 10000;
+	memset((char*)data, 0, BLOCK_SIZE * 10000);
+	for (i = 0; i < 10000; i++) {
 		poolQueue.push(data + (BLOCK_SIZE * i));
 	}
 }
@@ -29,11 +29,11 @@ CharPool::~CharPool() {
 // 메모리풀 할당
 char* CharPool::Malloc() {
 	
-	if (poolQueue.empty()) { // 더 할당 필요한 경우 len(초기 blocks만큼 추가)
-		char* nextP = new char[BLOCK_SIZE* len];
+	if (poolQueue.empty()) { // 더 할당 필요한 경우 2000만큼 추가
+		char* nextP = new char[BLOCK_SIZE * 2000];
 		cout << "CharPool More" << endl;
-		memset((char*)nextP, 0, BLOCK_SIZE * len);
-		for (DWORD j = 0; j < len; j++) {
+		memset((char*)nextP, 0, BLOCK_SIZE * 2000);
+		for (DWORD j = 0; j < 2000; j++) {
 			poolQueue.push(nextP + (BLOCK_SIZE* j));
 		}
 	}

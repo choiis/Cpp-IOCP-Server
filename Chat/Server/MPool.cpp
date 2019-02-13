@@ -8,11 +8,11 @@
 #include "MPool.h"
 // 생성자
 MPool::MPool() {
-	data = (char*) malloc(sizeof(PER_IO_DATA) * 2000);
+	data = (char*) malloc(sizeof(PER_IO_DATA) * 10000);
 	DWORD i = 0;
-	len = 2000;
-	memset((char*)data, 0, sizeof(PER_IO_DATA)* 2000);
-	for (i = 0; i < 2000; i++) {
+	len = 10000;
+	memset((char*)data, 0, sizeof(PER_IO_DATA)* 10000);
+	for (i = 0; i < 10000; i++) {
 		poolQueue.push(data + (sizeof(PER_IO_DATA) * i));
 	}
 }
@@ -28,11 +28,11 @@ MPool::~MPool() {
 }
 // 메모리풀 할당
 LPPER_IO_DATA MPool::Malloc() {
-	if (poolQueue.empty()) { // 더 할당 필요한 경우 len(초기 blocks만큼 추가)
-		char* nextP = new char[sizeof(PER_IO_DATA)* len];
+	if (poolQueue.empty()) { // 더 할당 필요한 경우 2000만큼 추가
+		char* nextP = new char[sizeof(PER_IO_DATA)* 2000];
 		cout << "MPool More" << endl;
-		memset((char*)nextP, 0, sizeof(PER_IO_DATA)* len);
-		for (DWORD j = 0; j < len; j++) {
+		memset((char*)nextP, 0, sizeof(PER_IO_DATA)* 2000);
+		for (DWORD j = 0; j < 2000; j++) {
 			poolQueue.push(nextP + (sizeof(PER_IO_DATA)* j));
 		}
 	}

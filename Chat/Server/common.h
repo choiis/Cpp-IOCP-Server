@@ -8,10 +8,13 @@
 #ifndef COMMON_H_
 #define COMMON_H_
 
+#include <winsock2.h>
+#include <list>
+
 using namespace std;
 #define BUF_SIZE 4096
 #define NAME_SIZE 20
-
+#define FILE_BUF_SIZE 32768
 // CP가 Recv 받을때 READ Send 받을때 WRITE
 #define READ 6
 #define WRITE 7
@@ -23,6 +26,7 @@ using namespace std;
 #define STATUS_WAITING 2
 #define STATUS_CHATTIG 3
 #define STATUS_WHISPER 4
+#define STATUS_FILE_SEND 5
 
 // 서버에게 지시 사항
 #define USER_MAKE 1
@@ -40,6 +44,7 @@ using namespace std;
 #define FRIEND_GO 11
 #define FRIEND_DELETE 12
 #define LOG_OUT 13
+#define FILE_SEND 14
 // 로그인 중복 방지
 #define NOW_LOGOUT 0
 #define NOW_LOGIN 1
@@ -51,6 +56,11 @@ using namespace std;
 
 #define SEND_ME 1
 #define SEND_ROOM 2
+#define SEND_FILE 3
+
+#define SERVER_PORT "1234"
+#define UDP_PORT "1236"
+#define UDP_PORT_SEND "2222"
 
 // 비동기 통신에 필요한 구조체
 typedef struct { // buffer info
@@ -81,4 +91,12 @@ typedef struct { // buffer info
 	int direction;
 	int status;
 } Send_DATA, *P_Send_DATA;
+
+// 비동기 통신에 필요한 구조체
+typedef struct { // buffer info
+	list<SOCKET> userList;
+	CRITICAL_SECTION listCs;
+} ROOM_DATA, *P_ROOM_DATA;
+
+
 #endif /* COMMON_H_ */

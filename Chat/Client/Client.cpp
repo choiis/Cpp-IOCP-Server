@@ -12,6 +12,7 @@
 #include <process.h>
 #include <regex>
 #include <algorithm>
+#include <direct.h>
 #include "MPool.h"
 #include "CharPool.h"
 
@@ -24,6 +25,13 @@ typedef struct { // socket info
 	SOCKET hClntSock;
 	SOCKADDR_IN clntAdr;
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
+
+// 비동기 통신에 필요한 구조체
+typedef struct { // buffer info
+	SOCKET hClntSock;
+	SOCKET udpSock;
+	SOCKADDR_IN sockaddr_in;
+} SOCKET_DATA, *P_SOCKET_DATA;
 
 // 영문+숫자 문자열 판별
 bool IsAlphaNumber(string str) {
@@ -51,6 +59,7 @@ void RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo) {
 		&(ioInfo->overlapped),
 		NULL);
 }
+
 // Recv 공통함수
 void Recv(SOCKET sock) {
 	DWORD recvBytes = 0;
@@ -95,46 +104,36 @@ void SendMsg(SOCKET clientSock, const char* msg, int status, int direction) {
 
 }
 
-void FileSend(SOCKET socket, sockaddr_in sockAddr, string fileDir) {
-	FILE* fp = fopen(fileDir.c_str(), "rb");
-	if (fp == nullptr) {
-		cout << "존재하지 않는 파일입니다" << endl;
-		return;
-	}
-	else {
-		int idx;
-		while ((idx = fileDir.find("/")) != -1) {
-			fileDir.erase(0, idx + 1);
-		}
-		char buf[BUF_SIZE];
-		fseek(fp, 0, SEEK_END);
-		int file_size = ftell(fp);
-		int totalBufferNum = file_size / sizeof(buf)+1;
-		fseek(fp, 0, SEEK_SET);
-		int BufferNum = 0;
-		int totalSendBytes = 0;
+void FileSend(SOCKET socket, FILE* fp, string fileDir) {
 
-		_snprintf(buf, sizeof(buf), "%d", file_size);
-		int sendBytes = sendto(socket, buf, sizeof(char)* 1024, 0, (SOCKADDR *)&sockAddr, sizeof(sockAddr));
-		char fileName[BUF_SIZE];
-		strncpy(fileName, fileDir.c_str(), BUF_SIZE);
+	int idx;
+	while ((idx = fileDir.find("/")) != -1) { // 파일명만 추출
+		fileDir.erase(0, idx + 1);
+	} 
+
+	char buf[FILE_BUF_SIZE];
+	fseek(fp, 0, SEEK_END);
+	int file_size = ftell(fp); // 파일크기
+	fseek(fp, 0, SEEK_SET);
+	int totalSendBytes = 0; // 총 바이트 수
 	
-		sendBytes = sendto(socket, fileName, strlen(fileName), 0, (SOCKADDR *)&sockAddr, sizeof(sockAddr));
-
-		while ((sendBytes = fread(buf, sizeof(char), sizeof(buf), fp))>0) {
-			sendto(socket, buf, sendBytes, 0, (SOCKADDR *)&sockAddr, sizeof(sockAddr));
-			BufferNum++;
-			totalSendBytes += sendBytes;
-			// printf("In progress: %d/%dByte(s) [%d%%]\n", totalSendBytes, file_size, ((BufferNum * 100) / totalBufferNum));
-			while (recvfrom(socket, buf, BUF_SIZE, 0, NULL, NULL) != 10)
-			{
-				sendto(socket, buf, sendBytes, 0, (SOCKADDR *)&sockAddr, sizeof(sockAddr));
-			}
-		}
+	char fileName[BUF_SIZE];
+	strncpy(fileName, fileDir.c_str(), BUF_SIZE);
+	cout << fileName << " 파일 전송을 시작합니다 " << endl;
+	// 파일이름 전송		
+	int sendBytes = send(socket, fileName, strlen(fileName), 0);
 		
-		cout << fileName << " 파일 " << file_size << " Byte가 서버로 전달되었습니다" << endl;
+	while (true) {
+		sendBytes = fread(buf, sizeof(char), FILE_BUF_SIZE, fp);
+		send(socket, buf, sendBytes, 0);
+		if (sendBytes == EOF || sendBytes == 0) {
+			break;
+		}
+		else {
+			Sleep(1);
+		}	
 	}
-
+	cout << fileName << " 파일 " << file_size << " Byte가 서버로 전달되었습니다" << endl;
 }
 
 // 경로 표시 한가지로 통일
@@ -145,15 +144,11 @@ void replaceFileDir(string& fileDir) {
 // 송신을 담당할 스레드
 unsigned WINAPI SendMsgThread(void *arg) {
 	// 넘어온 clientSocket을 받아줌
-	SOCKET clientSock = *((SOCKET*)arg);
-	// File전송에 필요한 UDP Socket정보
-	SOCKET udpSocket = socket(PF_INET, SOCK_DGRAM, 0);
-	struct sockaddr_in udpAddr;
-	memset(&udpAddr, 0, sizeof(udpAddr));
-	udpAddr.sin_family = AF_INET;
-	udpAddr.sin_addr.s_addr = inet_addr("10.10.55.62");
-	udpAddr.sin_port = htons(atoi("1235"));
-
+	SOCKET_DATA sockData = *((SOCKET_DATA*)arg);
+	SOCKET clientSock = sockData.hClntSock;
+	SOCKET udpSocket = sockData.udpSock;
+	SOCKADDR_IN udpAddr = sockData.sockaddr_in;
+	
 	while (1) {
 		string msg;
 		getline(cin, msg);
@@ -318,7 +313,16 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				string fileDir;
 				getline(cin, fileDir);
 				replaceFileDir(fileDir);
-				FileSend(udpSocket, udpAddr, fileDir);
+
+				FILE* fp = fopen(fileDir.c_str(), "rb");
+				if (fp == nullptr) {
+					cout << "존재하지 않는 파일입니다" << endl;
+				}
+				else {
+					SendMsg(clientSock, "", status, FILE_SEND);
+					FileSend(udpSocket, fp, fileDir);
+					fclose(fp); // 파일닫아줌
+				}
 				continue;
 			}
 		}
@@ -428,14 +432,57 @@ char* DataCopy(LPPER_IO_DATA ioInfo, int *status) {
 	return msg;
 }
 
+
+//  파일 수신 스레드
+unsigned WINAPI RecvFileThread(LPVOID arg) {
+
+	SOCKET udpRecvSocket = *((SOCKET*)arg);
+
+	SOCKADDR_IN servAdr;
+	int servAdrSize = sizeof(servAdr);
+	while (true) {
+		
+		int readBytes;
+		long totalReadBytes = 0;
+
+		char fileName[BUF_SIZE];// 두번째로 파일 이름을 받는다
+		readBytes = recvfrom(udpRecvSocket, fileName, BUF_SIZE, 0, (SOCKADDR*)&servAdr, &servAdrSize);
+		fileName[readBytes] = '\0';
+		// char fileDir[BUF_SIZE] = "C:/Users/choiis1207/Dsasownloads/"; // 다운로드 폴더로 경로 지정
+
+		char fileDir[BUF_SIZE] = "Downloads"; // 다운로드 폴더 경로생성
+		char buf[FILE_BUF_SIZE];
+		FILE * fp;
+		mkdir(fileDir);
+		strcat(fileDir, "/");
+		strcat(fileDir, fileName);
+		fp = fopen(fileDir, "wb");
+
+		while (true) {
+			readBytes = recvfrom(udpRecvSocket, buf, FILE_BUF_SIZE, 0, (SOCKADDR*)&servAdr, &servAdrSize);
+			totalReadBytes += readBytes;// totalByte계산하기
+			if (readBytes == 0 || readBytes == EOF) {
+				break;
+			}
+			fwrite(buf, sizeof(char), readBytes, fp);
+		}
+		fclose(fp);
+		cout << "recv file name " << fileName << " " << totalReadBytes << " Byte 다운로드 완료" << endl;
+	}
+
+	return 0;
+}
 // 수신을 담당할 스레드
-unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
+unsigned WINAPI RecvMsgThread(LPVOID pCompPort) {
 
 	SOCKET sock;
 	short bytesTrans;
 	LPPER_IO_DATA ioInfo;
+	HANDLE hComPort = (HANDLE)pCompPort;
 
-	while (1) {
+	// 넘어온 clientSocket을 받아줌
+
+	while (true) {
 		bool success = GetQueuedCompletionStatus(hComPort, (LPDWORD)&bytesTrans,
 			(LPDWORD)&sock, (LPOVERLAPPED*)&ioInfo, INFINITE);
 
@@ -523,13 +570,14 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 	}
 	return 0;
 }
+
 int main() {
 
 	WSADATA wsaData;
-	SOCKET hSocket;
+	SOCKET hSocket, udpSocket , udpRecvSocket;
 	SOCKADDR_IN servAddr;
 
-	HANDLE sendThread, recvThread;
+	HANDLE sendThread, recvThread, fileThread;
 
 	// Socket lib의 초기화
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -543,14 +591,18 @@ int main() {
 
 	memset(&servAddr, 0, sizeof(servAddr));
 	servAddr.sin_family = PF_INET;
-	servAddr.sin_addr.s_addr = inet_addr("10.10.55.62");
+	servAddr.sin_addr.s_addr = inet_addr(SERVER_IP);
 
+	// File전송에 필요한 UDP Socket정보
+	udpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	// File수신에 필요한 UDP Socket정보
+	udpRecvSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+
+	// 연결된 UDP
 	SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 12);
 	while (1) {
 
-		string port = "1234";
-
-		servAddr.sin_port = htons(atoi(port.c_str()));
+		servAddr.sin_port = htons(atoi(SERVER_PORT));
 
 		if (connect(hSocket, (SOCKADDR*)&servAddr,
 			sizeof(servAddr)) == SOCKET_ERROR) {
@@ -560,11 +612,30 @@ int main() {
 			break;
 		}
 	}
+
+	SOCKADDR_IN udpAddr;
+	memset(&udpAddr, 0, sizeof(udpAddr));
+	udpAddr.sin_family = AF_INET;
+	udpAddr.sin_addr.s_addr = inet_addr(SERVER_IP); // 보낼곳 고정
+	udpAddr.sin_port = htons(atoi(UDP_PORT));
+	connect(udpSocket, (SOCKADDR*)&udpAddr, sizeof(udpAddr));
+
+
+	SOCKADDR_IN udpRecvAddr, servAdr;
+	memset(&udpRecvAddr, 0, sizeof(udpRecvAddr));
+	udpRecvAddr.sin_family = AF_INET;
+	udpRecvAddr.sin_addr.s_addr = htonl(INADDR_ANY); // 받을곳
+	// udpRecvAddr.sin_addr.s_addr = inet_addr(SERVER_IP); // 받을곳
+	udpRecvAddr.sin_port = htons(atoi(UDP_PORT_SEND));
+
+	bind(udpRecvSocket, (SOCKADDR*)&udpRecvAddr, sizeof(udpRecvAddr));
+
 	// Completion Port 생성
 	HANDLE hComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 
 	// Completion Port 와 소켓 연결
 	CreateIoCompletionPort((HANDLE)hSocket, hComPort, (DWORD)hSocket, 0);
+
 
 	// 수신 스레드 동작
 	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다
@@ -576,14 +647,23 @@ int main() {
 	// 송신 스레드 동작
 	// Thread안에서 clientSocket으로 Send해줄거니까 인자로 넘겨준다
 	// CP랑 Send는 연결 안되어있음 GetQueuedCompletionStatus에서 Send 완료처리 필요없음
+	SOCKET_DATA socketData = { hSocket, udpSocket, udpAddr };
+
 	sendThread = (HANDLE)_beginthreadex(NULL, 0, SendMsgThread,
-		(void*)&hSocket, 0,
+		(void*)&socketData, 0,
 		NULL);
+	// File Recv만을 위한 UDP 스레드
+	fileThread = (HANDLE)_beginthreadex(NULL, 0, RecvFileThread,
+		(LPVOID)&udpRecvSocket, 0,
+		NULL); 
 
 	Recv(hSocket);
 	WaitForSingleObject(sendThread, INFINITE);
+	WaitForSingleObject(fileThread, INFINITE);
 	WaitForSingleObject(recvThread, INFINITE);
 	closesocket(hSocket);
+	closesocket(udpSocket);
+	closesocket(udpRecvSocket);
 	WSACleanup();
 	return 0;
 }

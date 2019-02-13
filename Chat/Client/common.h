@@ -12,6 +12,7 @@ using namespace std;
 
 #define BUF_SIZE 4096
 #define NAME_SIZE 20
+#define FILE_BUF_SIZE 32768
 
 // CP가 Recv 받을때 READ Send 받을때 WRITE
 #define READ 6
@@ -19,11 +20,12 @@ using namespace std;
 #define READ_MORE 8
 
 // 클라이언트 상태 정보 => 서버에서 보관할것
-#define STATUS_NO_CHANGE 0
+#define STATUS_INIT 0
 #define STATUS_LOGOUT 1
 #define STATUS_WAITING 2
 #define STATUS_CHATTIG 3
 #define STATUS_WHISPER 4
+#define STATUS_FILE_SEND 5
 
 // 서버에게 지시 사항
 #define USER_MAKE 1
@@ -41,6 +43,7 @@ using namespace std;
 #define FRIEND_GO 11
 #define FRIEND_DELETE 12
 #define LOG_OUT 13
+#define FILE_SEND 14
 // 로그인 중복 방지
 #define NOW_LOGOUT 0
 #define NOW_LOGIN 1
@@ -49,6 +52,11 @@ using namespace std;
 #define waitRoomMessage	"1.방 정보 보기 2.방 만들기 3.방 입장하기 4.유저 정보 5.친구 정보 6.친구 관리 7.귓속말 8.로그아웃 9.콘솔지우기"
 #define errorMessage "잘못된 명령어 입니다"
 #define chatRoomMessage  "나가시려면 \\out을 콘솔지우기는 \\clear를 친구추가는 \\add 닉네임을 파일전송은\\send를 입력하세요"
+
+#define SERVER_IP "10.10.55.62"
+#define SERVER_PORT "1234"
+#define UDP_PORT "1236"
+#define UDP_PORT_SEND "2222"
 
 // 비동기 통신에 필요한 구조체
 typedef struct { // buffer info

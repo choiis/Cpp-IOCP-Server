@@ -173,78 +173,84 @@ void SendMsg(SOCKET clientSock, const char* msg, int direction) {
 // 패킷 데이터 읽기
 short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
 	// IO 완료후 동작 부분
-	if (READ == ioInfo->serverMode) {
-		if (bytesTrans >= 2) {
-			copy(ioInfo->buffer, ioInfo->buffer + 2,
-				(char*)&(ioInfo->bodySize));
-			CharPool* charPool = CharPool::getInstance();
-			ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte까지 카피 가능
-			if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
-				copy(ioInfo->buffer, ioInfo->buffer + ioInfo->bodySize,
-					((char*)ioInfo->recvBuffer));
+	try {
+		if (READ == ioInfo->serverMode) {
+			if (bytesTrans >= 2) {
+				copy(ioInfo->buffer, ioInfo->buffer + 2,
+					(char*)&(ioInfo->bodySize));
+				CharPool* charPool = CharPool::getInstance();
+				ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte까지 카피 가능
+				if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
+					copy(ioInfo->buffer, ioInfo->buffer + ioInfo->bodySize,
+						((char*)ioInfo->recvBuffer));
 
-				copy(ioInfo->buffer + ioInfo->bodySize, ioInfo->buffer + bytesTrans, ioInfo->buffer); // 다음에 또 쓸 byte배열 복사
-				return bytesTrans - ioInfo->bodySize; // 남은 바이트 수
+					copy(ioInfo->buffer + ioInfo->bodySize, ioInfo->buffer + bytesTrans, ioInfo->buffer); // 다음에 또 쓸 byte배열 복사
+					return bytesTrans - ioInfo->bodySize; // 남은 바이트 수
+				}
+				else if (bytesTrans - ioInfo->bodySize == 0) { // 뭉쳐있지 않으면 remainByte 0
+					copy(ioInfo->buffer, ioInfo->buffer + ioInfo->bodySize,
+						((char*)ioInfo->recvBuffer));
+					return 0;
+				}
+				else { // 바디 내용 부족 => RecvMore에서 받을 부분 복사
+					copy(ioInfo->buffer, ioInfo->buffer + bytesTrans, ((char*)ioInfo->recvBuffer));
+					ioInfo->recvByte = bytesTrans;
+					return bytesTrans - ioInfo->bodySize;
+				}
 			}
-			else if (bytesTrans - ioInfo->bodySize == 0) { // 뭉쳐있지 않으면 remainByte 0
-				copy(ioInfo->buffer, ioInfo->buffer + ioInfo->bodySize,
-					((char*)ioInfo->recvBuffer));
+			else if (bytesTrans == 1) { // 헤더 부족
+				copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
+					(char*)&(ioInfo->bodySize)); // 가지고있는 Byte까지 카피
+				ioInfo->recvByte = bytesTrans;
+				ioInfo->totByte = 0;
+				return -1;
+			}
+			else {
 				return 0;
 			}
-			else { // 바디 내용 부족 => RecvMore에서 받을 부분 복사
-				copy(ioInfo->buffer, ioInfo->buffer + bytesTrans, ((char*)ioInfo->recvBuffer));
-				ioInfo->recvByte = bytesTrans;
-				return bytesTrans - ioInfo->bodySize;
+		}
+		else { // 더 읽기 (BodySize짤린경우)
+			ioInfo->serverMode = READ;
+			if (ioInfo->recvByte < 2) { // Body정보 없음
+				copy(ioInfo->buffer, ioInfo->buffer + (2 - ioInfo->recvByte),
+					(char*)&(ioInfo->bodySize) + ioInfo->recvByte); // 가지고있는 Byte까지 카피
+				CharPool* charPool = CharPool::getInstance();
+				ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte까지 카피 가능
+				copy(ioInfo->buffer + (2 - ioInfo->recvByte), ioInfo->buffer + (ioInfo->bodySize + 2 - ioInfo->recvByte),
+					((char*)ioInfo->recvBuffer) + 2);
+
+				if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
+					copy(ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte), ioInfo->buffer + bytesTrans, ioInfo->buffer); // 여기문제?
+					return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte); // 남은 바이트 수  여기문제?
+				}
+				else { // 뭉쳐있지 않으면 remainByte 0
+					return 0;
+				}
 			}
-		}
-		else if (bytesTrans == 1) { // 헤더 부족
-			copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
-				(char*)&(ioInfo->bodySize)); // 가지고있는 Byte까지 카피
-			ioInfo->recvByte = bytesTrans;
-			ioInfo->totByte = 0;
-			return -1;
-		}
-		else {
-			return 0;
+			else { // body정보는 있음
+				copy(ioInfo->buffer, ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte),
+					((char*)ioInfo->recvBuffer) + ioInfo->recvByte);
+
+				if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
+					copy(ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte), ioInfo->buffer + bytesTrans, ioInfo->buffer);
+					return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte); // 남은 바이트 수
+				}
+				else if (bytesTrans - ioInfo->bodySize == 0) { // 뭉쳐있지 않으면 remainByte 0
+					return 0;
+				}
+				else { // 바디 내용 부족 => RecvMore에서 받을 부분 복사
+					copy(ioInfo->buffer + 2, ioInfo->buffer + bytesTrans, ioInfo->buffer);
+					ioInfo->recvByte = bytesTrans;
+					return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte);
+				}
+			}
+
 		}
 	}
-	else { // 더 읽기 (BodySize짤린경우)
-		ioInfo->serverMode = READ;
-		if (ioInfo->recvByte < 2) { // Body정보 없음
-			copy(ioInfo->buffer, ioInfo->buffer + (2 - ioInfo->recvByte),
-				(char*)&(ioInfo->bodySize) + ioInfo->recvByte); // 가지고있는 Byte까지 카피
-			CharPool* charPool = CharPool::getInstance();
-			ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte까지 카피 가능
-			copy(ioInfo->buffer + (2 - ioInfo->recvByte), ioInfo->buffer + (ioInfo->bodySize + 2 - ioInfo->recvByte),
-				((char*)ioInfo->recvBuffer) + 2);
-
-			if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
-				copy(ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte), ioInfo->buffer + bytesTrans, ioInfo->buffer); // 여기문제?
-				return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte); // 남은 바이트 수  여기문제?
-			}
-			else { // 뭉쳐있지 않으면 remainByte 0
-				return 0;
-			}
-		}
-		else { // body정보는 있음
-			copy(ioInfo->buffer, ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte),
-				((char*)ioInfo->recvBuffer) + ioInfo->recvByte);
-
-			if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
-				copy(ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte), ioInfo->buffer + bytesTrans, ioInfo->buffer);
-				return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte); // 남은 바이트 수
-			}
-			else if (bytesTrans - ioInfo->bodySize == 0) { // 뭉쳐있지 않으면 remainByte 0
-				return 0;
-			}
-			else { // 바디 내용 부족 => RecvMore에서 받을 부분 복사
-				copy(ioInfo->buffer + 2, ioInfo->buffer + bytesTrans, ioInfo->buffer);
-				ioInfo->recvByte = bytesTrans;
-				return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte);
-			}
-		}
-
+	catch (int expe) {
+		cout << "예외발생"<<endl;
 	}
+	
 }
 
 // 클라이언트에게 받은 데이터 복사후 구조체 해제
@@ -491,8 +497,6 @@ int main() {
 		exit(1);
 	}
 
-	string port = "1234";
-
 	MPool* mp = MPool::getInstance(); // 메모리풀 초기화 지점
 	CharPool* charPool = CharPool::getInstance(); // 메모리풀 초기화 지점
 
@@ -520,8 +524,8 @@ int main() {
 		SOCKADDR_IN servAddr;
 		memset(&servAddr, 0, sizeof(servAddr));
 		servAddr.sin_family = PF_INET;
-		servAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-		servAddr.sin_port = htons(atoi(port.c_str()));
+		servAddr.sin_addr.s_addr = inet_addr(SERVER_IP);
+		servAddr.sin_port = htons(atoi(SERVER_PORT));
 
 		if (connect(clientSocket, (SOCKADDR*)&servAddr,
 			sizeof(servAddr)) == SOCKET_ERROR) {
@@ -567,14 +571,14 @@ int main() {
 	// 수신 스레드 동작
 	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다
 	// RecvMsg에서 Recv가 완료되면 동작할 부분이 있다
-	for (int i = 0; i < 2 * process ; i++) {
+	for (int i = 0; i < 8 * process ; i++) {
 		_beginthreadex(NULL, 0, RecvMsgThread, (LPVOID)hComPort, 0,
 			NULL);
 	}
 
 	// 동작을 만들어줄 스레드 동작
 	// 만들어진 동작큐를 hComPort SendMsgThread에서 처리하게 된다
-	for (int i = 0; i < process / 2; i++)
+	for (int i = 0; i < (process * 4) / 3; i++)
 	{
 		_beginthreadex(NULL, 0, MakeMsgThread,
 			NULL, 0,
@@ -584,14 +588,12 @@ int main() {
 	// 송신 스레드 동작
 	// Thread안에서 clientSocket으로 Send해줄거니까 인자로 넘겨준다
 	// CP랑 Send는 연결 안되어있음 GetQueuedCompletionStatus에서 Send 완료처리 필요없음
-	for (int i = 0; i < process / 2; i++)
+	for (int i = 0; i < (process * 4) / 3; i++)
 	{
 		_beginthreadex(NULL, 0, SendMsgThread,
 			NULL, 0,
 			NULL);
 	}
-
-
 
 	while (true) {
 		int moreClient;

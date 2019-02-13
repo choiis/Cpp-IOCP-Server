@@ -13,7 +13,9 @@
 #include <unordered_set>
 #include <string>
 #include <queue>
+#include <direct.h>
 #include "IocpService.h"
+#include "FileService.h"
 #include "Dao.h"
 
 // #pragma comment(lib, "Dao.h") 
@@ -35,17 +37,11 @@ typedef struct { // socket info
 
 // 비동기 통신에 필요한 구조체
 typedef struct { // buffer info
-	list<SOCKET> userList;
-	CRITICAL_SECTION listCs;
-} ROOM_DATA, *P_ROOM_DATA;
-
-// 비동기 통신에 필요한 구조체
-typedef struct { // buffer info
 	int direction;
 	Vo vo;
 } SQL_DATA, *P_SQL_DATA;
 
-namespace Service {
+namespace BusinessService {
 
 class BusinessService {
 private:
@@ -76,9 +72,16 @@ private:
 	// sendQueue 동기화
 	CRITICAL_SECTION sendCs;
 
+	// 접속끊어진 socket은 Send에서 제외
+	// UDP 전송 Case때문에 각 클라이언트 socket의 IP도 저장한다
+	unordered_map<SOCKET, string> liveSocket;
+
+	CRITICAL_SECTION liveSocketCs;
+
 	IocpService::IocpService *iocpService;
 
-	unsigned WINAPI RecvThread(void* args);
+	FileService::FileService *fileService;
+
 public:
 	// 생성자
 	BusinessService();
@@ -89,7 +92,7 @@ public:
 	// SendThread에서 동작할 부분
 	void Sendwork();
 	// InsertSendQueue 공통화
-	void InsertSendQueue(int direction, string msg,string roomName,SOCKET socket,int status);
+	void InsertSendQueue(int direction, const string& msg, const string& roomName, SOCKET socket, int status);
 	// 초기 로그인
 	// 세션정보 추가
 	void InitUser(const char *id, SOCKET sock ,const char *nickName);
@@ -104,6 +107,8 @@ public:
 	// 채팅방에서의 로직 처리
 	// 세션값 있음
 	void StatusChat(SOCKET sock, int status, int direction, const char *message);
+	// 채팅방에서의 파일 입출력 케이스
+	void StatusFile(SOCKET sock);
 	// 클라이언트에게 받은 데이터 복사후 구조체 해제
 	string DataCopy(LPPER_IO_DATA ioInfo, int *status, int *direction);
 	// 패킷 데이터 읽기
@@ -113,7 +118,11 @@ public:
 	// 클라이언트의 상태정보 반환
 	int GetStatus(SOCKET sock);
 	// 친구추가 기능
-	void AddFriend(SOCKET sock, string msg, string id, int status);
+	void AddFriend(SOCKET sock, const string& msg, const string& id, int status);
+	// 연결중 socket Insert
+	void InsertLiveSocket(SOCKET& hClientSock,SOCKADDR_IN& addr);
+	// socket 죽었는지 확인
+	bool IsSocketDead(SOCKET socket);
 
 	const unordered_set<string>& getIdSet() const {
 		return idSet;

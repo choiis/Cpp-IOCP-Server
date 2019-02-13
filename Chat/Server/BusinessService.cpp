@@ -7,7 +7,7 @@
 
 #include "BusinessService.h"
 
-namespace Service {
+namespace BusinessService {
 
 	BusinessService::BusinessService() {
 		// 임계영역 Object 생성
@@ -21,7 +21,11 @@ namespace Service {
 
 		InitializeCriticalSectionAndSpinCount(&sendCs, 2000);
 
+		InitializeCriticalSectionAndSpinCount(&liveSocketCs, 2000);
+		
 		iocpService = new IocpService::IocpService();
+
+		fileService = new FileService::FileService();
 
 		dao = new Dao();
 	}
@@ -31,6 +35,9 @@ namespace Service {
 		delete dao;
 
 		delete iocpService;
+
+		delete fileService;
+
 		// 임계영역 Object 반환
 		DeleteCriticalSection(&idCs);
 
@@ -41,6 +48,8 @@ namespace Service {
 		DeleteCriticalSection(&sqlCs);
 
 		DeleteCriticalSection(&sendCs);
+
+		DeleteCriticalSection(&liveSocketCs);
 	}
 
 	void BusinessService::SQLwork() {
@@ -114,6 +123,41 @@ namespace Service {
 				}
 				break;
 			}
+			case SEND_FILE:
+			{
+				string dir = sendData.msg;
+
+			    FILE* fp = fopen(dir.c_str(), "rb");
+				if (fp == NULL) {
+					cout << "파일 열기 실패" << endl;
+					return;
+				}
+
+				int idx;
+				while ((idx = dir.find("/")) != -1) { // 파일명만 추출
+					dir.erase(0, idx + 1);
+				}
+		
+				EnterCriticalSection(&roomCs);		
+				auto iter = roomMap.find(sendData.roomName);	
+				shared_ptr<ROOM_DATA> second = nullptr;	
+				if (iter != roomMap.end()) {	
+					second = iter->second;			
+				}
+				LeaveCriticalSection(&roomCs);
+
+
+				
+				// 각 방의 CS
+				if (second != nullptr && second->listCs.LockCount == -1) {
+					EnterCriticalSection(&second->listCs);
+					fileService->SendToRoomFile(fp, dir, second, liveSocket);
+					LeaveCriticalSection(&second->listCs);
+				}
+				 
+				fclose(fp);
+			    break;
+			}
 			default:
 				break;
 			}
@@ -126,7 +170,7 @@ namespace Service {
 	}
 
 	// InsertSendQueue 공통화
-	void BusinessService::InsertSendQueue(int direction, string msg, string roomName, SOCKET socket, int status){
+	void BusinessService::InsertSendQueue(int direction, const string& msg, const string& roomName, SOCKET socket, int status) {
 
 		EnterCriticalSection(&sendCs);
 		// SendQueue에 Insert
@@ -195,6 +239,11 @@ namespace Service {
 
 		if (closesocket(sock) != SOCKET_ERROR) {
 			cout << "정상 종료 " << endl;
+
+			// 콘솔 강제종료 처리
+			EnterCriticalSection(&liveSocketCs);
+			liveSocket.erase(sock);
+			LeaveCriticalSection(&liveSocketCs);
 
 			if (userMap.find(sock) != userMap.end()) {
 
@@ -814,9 +863,11 @@ namespace Service {
 
 			// room Lock은 방 완전 삭제시 에만
 			EnterCriticalSection(&roomCs);
-			if ((roomMap.find(roomName)->second)->userList.size() == 0) { // 방인원 0명이면 방 삭제
-				DeleteCriticalSection(&roomMap.find(roomName)->second->listCs);
-				roomMap.erase(roomName);
+			if (roomMap.find(roomName) != roomMap.end()) {
+				if ((roomMap.find(roomName)->second)->userList.size() == 0) { // 방인원 0명이면 방 삭제
+					DeleteCriticalSection(&roomMap.find(roomName)->second->listCs);
+					roomMap.erase(roomName);
+				}
 			}
 			LeaveCriticalSection(&roomCs);
 		}
@@ -861,6 +912,17 @@ namespace Service {
 
 			LeaveCriticalSection(&sqlCs);
 		}
+	}
+
+	// 채팅방에서의 파일 입출력 케이스
+	void BusinessService::StatusFile(SOCKET sock) {
+		
+		string fileDir = fileService->RecvFile(sock);
+		// SendQueue에 Insert
+		InsertSendQueue(SEND_ROOM, "", userMap.find(sock)->second.roomName, 0, STATUS_FILE_SEND);
+		// 여기서부터 UDP BroadCast
+		InsertSendQueue(SEND_FILE, fileDir.c_str(), userMap.find(sock)->second.roomName, 0, STATUS_FILE_SEND);
+
 	}
 
 	// 클라이언트에게 받은 데이터 복사후 구조체 해제
@@ -990,7 +1052,7 @@ namespace Service {
 	}
 
 	// 친구추가 기능
-	void BusinessService::AddFriend(SOCKET sock, string msg, string id, int status) {
+	void BusinessService::AddFriend(SOCKET sock, const string& msg, const string& id, int status) {
 		Vo vo;
 		vo.setNickName(msg.c_str());
 		Vo vo2 = dao->findUserId(vo); // 아이디 존재 여부 검색
@@ -1017,6 +1079,16 @@ namespace Service {
 				InsertSendQueue(SEND_ME, sendMsg, "", sock, status);
 			}
 		}
+	}
+
+	void BusinessService::InsertLiveSocket(SOCKET& hClientSock, SOCKADDR_IN& addr) {
+		EnterCriticalSection(&liveSocketCs);
+		liveSocket.insert(pair<SOCKET, string>(hClientSock, inet_ntoa(addr.sin_addr)));
+		LeaveCriticalSection(&liveSocketCs);
+	}
+
+	bool BusinessService::IsSocketDead(SOCKET socket){
+		return liveSocket.find(socket) == liveSocket.end();
 	}
 
 	IocpService::IocpService* BusinessService::getIocpService() {
