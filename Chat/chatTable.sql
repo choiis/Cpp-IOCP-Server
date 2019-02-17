@@ -3,7 +3,9 @@ userid varchar(10) COLLATE KOREAN_WANSUNG_CS_AS not null,
 password varchar(10) not null,
 nickname varchar(20) not null,
 regdate datetime not null,
-lastlogdate datetime
+lastlogdate datetime,
+loginyn int not null DEFAULT 0,
+adminyn int not null DEFAULT 0
 );
 
 alter table cso_id
