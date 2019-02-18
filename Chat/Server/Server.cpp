@@ -63,10 +63,21 @@ unsigned WINAPI WorkThread(void *arg) {
 				if (businessService->IsSocketDead(jobData.socket)) {
 					continue;
 				}
+
+
 				// DataCopy에서 받은 ioInfo 모두 free
 				if (!businessService->SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
 					// 로그인 이전 로직 처리
-					businessService->StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());
+					
+					if (jobData.direction == USERCNT) { // node js 서버로 전체 로그인된 유저수 반환
+						businessService->ReturnUserCnt(jobData.socket);
+					}
+					else if (jobData.direction == BAN) {
+						businessService->BanUser(jobData.socket, jobData.msg.c_str());
+					}
+					else {
+						businessService->StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());
+					}
 					// 세션값 없음 => 로그인 이전 분기 끝
 				}
 				else { // 세션값 있을때 => 대기방 또는 채팅방 상태
@@ -117,7 +128,7 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 
 		bool success = GetQueuedCompletionStatus(hComPort, (LPDWORD)&bytesTrans,
 				(LPDWORD) &sock, (LPOVERLAPPED*) &ioInfo, INFINITE);
-
+		
 		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
 			
 			businessService->ClientExit(sock);
@@ -153,6 +164,7 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 				else if (remainByte < 0) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
 					businessService->getIocpService()->RecvMore(
 						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
+
 					recvMore = true;
 					break;
 				}
@@ -245,23 +257,23 @@ int main(int argc, char* argv[]) {
 	businessService = new BusinessService::BusinessService();
 	
 	// Thread Pool Client에게 패킷 받는 동작
-	for (int i = 0; i < process; i++) {
+	for (int i = 0; i < process / 2; i++) {
 		// 만들어진 HandleThread를 hComPort CP 오브젝트에 할당한다
 		_beginthreadex(NULL, 0, RecvThread, (LPVOID)hComPort, 0, NULL);
 	}
 
 	// Thread Pool 비지니스 로직 담당
-	for (int i = 0; i < 2 * process; i++) {
+	for (int i = 0; i < process; i++) {
 		_beginthreadex(NULL, 0, WorkThread, NULL, 0, NULL);
 	}
 
 	// Thread Pool 로그 저장 SQL 실행에 쓰임
-	for (int i = 0; i < (process * 2) / 3; i++) {
+	for (int i = 0; i < process / 3; i++) {
 		_beginthreadex(NULL, 0, SQLThread, NULL, 0, NULL);
 	}
 
 	// Thread Pool BroadCast 해줌
-	for (int i = 0; i < (process * 4) / 3; i++) {
+	for (int i = 0; i < (process * 2) / 3; i++) {
 		_beginthreadex(NULL, 0, SendThread, NULL, 0, NULL);
 	}
 

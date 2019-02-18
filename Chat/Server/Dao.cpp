@@ -23,6 +23,15 @@ Dao::Dao() {
 		SQL_NTS, NULL, 1024, NULL, SQL_DRIVER_NOPROMPT); //접속 조건 입력. (성공 = 1, 실패 = -1 리턴)
 	if (res == 1) {
 		std::cout << "DB connection 성공" << std::endl;
+		res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+		// Login정보 초기화
+		char query[512] = "update cso_id set loginyn = 0";
+
+		SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
+
+		res = SQLExecute(hStmt);
+
+		SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
 	}
 	
 }
@@ -86,7 +95,25 @@ void Dao::UpdateUser(Vo& vo){
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	
 
-	char query[512] = "update cso_id set lastlogdate = getdate() where userid = ? ";
+	char query[512] = "update cso_id set lastlogdate = getdate()  , loginyn = 1  where userid = ? ";
+
+	res = SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
+
+	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
+
+	res = SQLExecute(hStmt);
+
+	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+	LeaveCriticalSection(&this->cs);
+}
+
+// Logout정보 초기화
+void Dao::LogoutUser(Vo& vo) {
+	EnterCriticalSection(&this->cs);
+
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+
+	char query[512] = "update cso_id set loginyn = 0  where userid = ? ";
 
 	res = SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
 

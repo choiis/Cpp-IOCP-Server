@@ -256,6 +256,10 @@ namespace BusinessService {
 					NAME_SIZE);
 				strncpy(name, userMap.find(sock)->second.userName, NAME_SIZE);
 				strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
+				// DB데이터 로그아웃으로
+				Vo vo;
+				vo.setUserId(id);
+				dao->LogoutUser(vo);
 				// 로그인 Set에서 out
 				EnterCriticalSection(&idCs);
 				idSet.erase(id);
@@ -786,10 +790,15 @@ namespace BusinessService {
 
 		}
 		else if (direction == LOG_OUT) { // 로그아웃
-
+			char id[NAME_SIZE];
 			EnterCriticalSection(&idCs);
+			strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
 			idSet.erase(userMap.find(sock)->second.userId); // 로그인 셋에서 제외
 			LeaveCriticalSection(&idCs);
+			// DB데이터 로그아웃으로
+			Vo vo;
+			vo.setUserId(id);
+			dao->LogoutUser(vo);
 
 			EnterCriticalSection(&userCs);
 			userMap.erase(sock); // 접속 소켓 정보 삭제
@@ -957,7 +966,6 @@ namespace BusinessService {
 			if (bytesTrans >= 2) {
 				copy(ioInfo->buffer, ioInfo->buffer + 2,
 					(char*)&(ioInfo->bodySize));
-
 				CharPool* charPool = CharPool::getInstance();
 				ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte까지 카피 가능
 				if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
@@ -1089,6 +1097,26 @@ namespace BusinessService {
 
 	bool BusinessService::IsSocketDead(SOCKET socket){
 		return liveSocket.find(socket) == liveSocket.end();
+	}
+
+	void BusinessService::BanUser(SOCKET socket, const char* nickName) {
+	
+		EnterCriticalSection(&userCs);
+		unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
+		LeaveCriticalSection(&userCs);
+
+		unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
+
+		for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
+			if (strcmp(nickName, iter->second.userName) == 0) {
+				ClientExit(iter->first);
+				break;
+			}
+		}
+	}
+
+	void BusinessService::ReturnUserCnt(SOCKET socket) {
+		InsertSendQueue(SEND_ME, "12", "", socket, userMap.size());
 	}
 
 	IocpService::IocpService* BusinessService::getIocpService() {

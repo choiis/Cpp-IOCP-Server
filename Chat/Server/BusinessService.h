@@ -123,6 +123,10 @@ public:
 	void InsertLiveSocket(SOCKET& hClientSock,SOCKADDR_IN& addr);
 	// socket 죽었는지 확인
 	bool IsSocketDead(SOCKET socket);
+	// node 서버에서 강퇴하기
+	void BanUser(SOCKET socket, const char* nickName);
+	// node 서버로 로그인 유저수 반환
+	void ReturnUserCnt(SOCKET socket);
 
 	const unordered_set<string>& getIdSet() const {
 		return idSet;
