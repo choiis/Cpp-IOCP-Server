@@ -1,9 +1,9 @@
 /*
- * common.h
- *
- *  Created on: 2019. 1. 8.
- *      Author: choiis1207
- */
+* common.h
+*
+*  Created on: 2019. 1. 8.
+*      Author: choiis1207
+*/
 
 #ifndef COMMON_H_
 #define COMMON_H_

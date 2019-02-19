@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <ctime>
 #include <string>
+#include <stdexcept>
 #include "MPool.h"
 #include "CharPool.h"
 #include <list>
@@ -180,7 +181,7 @@ short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
 					(char*)&(ioInfo->bodySize));
 				CharPool* charPool = CharPool::getInstance();
 				ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte까지 카피 가능
-				if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
+				if((bytesTrans - ioInfo->bodySize > 0) && (bytesTrans - ioInfo->bodySize <= BUF_SIZE)) { // 패킷 뭉쳐있는 경우
 					copy(ioInfo->buffer, ioInfo->buffer + ioInfo->bodySize,
 						((char*)ioInfo->recvBuffer));
 
@@ -192,10 +193,15 @@ short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
 						((char*)ioInfo->recvBuffer));
 					return 0;
 				}
-				else { // 바디 내용 부족 => RecvMore에서 받을 부분 복사
+				else  if (bytesTrans - ioInfo->bodySize < 0) { // 바디 내용 부족 => RecvMore에서 받을 부분 복사
 					copy(ioInfo->buffer, ioInfo->buffer + bytesTrans, ((char*)ioInfo->recvBuffer));
 					ioInfo->recvByte = bytesTrans;
 					return bytesTrans - ioInfo->bodySize;
+				}
+				else {
+					copy(ioInfo->buffer, ioInfo->buffer + BUF_SIZE,
+						((char*)ioInfo->recvBuffer));
+					return 0;
 				}
 			}
 			else if (bytesTrans == 1) { // 헤더 부족
@@ -247,7 +253,7 @@ short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
 
 		}
 	}
-	catch (int expe) {
+	catch (const exception& ex) {
 		cout << "예외발생"<<endl;
 	}
 	
@@ -300,6 +306,8 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 		string password = "1234";
 		string msgs[10] = {"안녕하세요!","반갑습니다!","고맙습니다","Hello World","곤니치와","아리가토","C++"
 		,"굿모닝","땡큐","하이"};
+		string rooms[16] = { "EPL", "세리에", "라리가", "분데스리가", "월드컵", "유로", "아시안컵"
+			, "K리그", "J리그", "UCL", "UEL", "ACL", "리그앙", "에레디비시", "CSL", "수페르리가" };
 		INFO_CLIENT info = clientQueue->popMakeQueue();
 
 		if (info.job == 1) {
@@ -353,30 +361,17 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 			else if (cStatus == STATUS_WAITING) {
 				int directionNum = (rand() % 10);
 				if (directionNum <= 6) { // 70퍼센트 방입장
-					int randNum1 = (rand() % 2);
-					int randNum2 = (rand() % 10);
-					string roomName = "";
-					if (randNum1 == 0) {
-						roomName += alpha1.at(randNum2);
-					}
-					else {
-						roomName += alpha2.at(randNum2);
-					}
+					int randNum1 = (rand() % 16);
+					string roomName = rooms[randNum1];
+					
 					info.direction = ROOM_ENTER;
 					info.message = roomName;
 				}
 				else { //30 퍼센트 방만들기
-					int randNum1 = (rand() % 2);
-					int randNum2 = (rand() % 10);
-					string roomName = "";
-					if (randNum1 == 0) {
-						roomName += alpha1.at(randNum2);
-					}
-					else {
-						roomName += alpha2.at(randNum2);
-					}
+					int randNum1 = (rand() % 16);
+					string roomName = rooms[randNum1];
+					
 					info.direction = ROOM_MAKE;
-
 					info.message = roomName;
 				}
 			}
@@ -549,7 +544,7 @@ int main() {
 		// Recv부터 간다
 		info.job = 0;
 		makeQueues.push(info);
-		// userMap 채운다
+		// userMap 채운다100
 		userMap[clientSocket] = info;
 		// cout << "sock num " << clientSocket << " id " << info.id << endl;
 		// 각 socket들 Recv 동작으로
@@ -571,14 +566,14 @@ int main() {
 	// 수신 스레드 동작
 	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다
 	// RecvMsg에서 Recv가 완료되면 동작할 부분이 있다
-	for (int i = 0; i < 8 * process ; i++) {
+	for (int i = 0; i < (2 * clientCnt) / 3; i++) {
 		_beginthreadex(NULL, 0, RecvMsgThread, (LPVOID)hComPort, 0,
 			NULL);
 	}
 
 	// 동작을 만들어줄 스레드 동작
 	// 만들어진 동작큐를 hComPort SendMsgThread에서 처리하게 된다
-	for (int i = 0; i < (process * 4) / 3; i++)
+	for (int i = 0; i < (3 * process) / 2; i++)
 	{
 		_beginthreadex(NULL, 0, MakeMsgThread,
 			NULL, 0,
@@ -588,7 +583,7 @@ int main() {
 	// 송신 스레드 동작
 	// Thread안에서 clientSocket으로 Send해줄거니까 인자로 넘겨준다
 	// CP랑 Send는 연결 안되어있음 GetQueuedCompletionStatus에서 Send 완료처리 필요없음
-	for (int i = 0; i < (process * 4) / 3; i++)
+	for (int i = 0; i < (3 * process) / 2; i++)
 	{
 		_beginthreadex(NULL, 0, SendMsgThread,
 			NULL, 0,

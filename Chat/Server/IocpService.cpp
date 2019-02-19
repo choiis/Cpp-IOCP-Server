@@ -34,7 +34,6 @@ void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, int status) {
 	ioInfo->wsaBuf.buf = (char*)packet;
 	ioInfo->wsaBuf.len = len;
 	ioInfo->serverMode = WRITE;
-
 	WSASend(mySock, &(ioInfo->wsaBuf), 1, NULL, 0, &(ioInfo->overlapped),
 	NULL);
 

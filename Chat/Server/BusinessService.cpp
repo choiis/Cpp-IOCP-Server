@@ -228,8 +228,8 @@ namespace BusinessService {
 		sqlQueue.push(sqlData2); // 로그인 DB에 기록
 
 		LeaveCriticalSection(&sqlCs);
-
-		msg = "입장을 환영합니다!\n";
+		msg = nickName;
+		msg.append("님 입장을 환영합니다!\n");
 		msg.append(waitRoomMessage);
 		InsertSendQueue(SEND_ME, msg, "", sock, STATUS_WAITING);
 	}
@@ -256,10 +256,7 @@ namespace BusinessService {
 					NAME_SIZE);
 				strncpy(name, userMap.find(sock)->second.userName, NAME_SIZE);
 				strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
-				// DB데이터 로그아웃으로
-				Vo vo;
-				vo.setUserId(id);
-				dao->LogoutUser(vo);
+
 				// 로그인 Set에서 out
 				EnterCriticalSection(&idCs);
 				idSet.erase(id);
@@ -267,48 +264,38 @@ namespace BusinessService {
 
 				// 방이름 임시 저장
 				if (userMap.find(sock)->second.status == STATUS_CHATTIG) { // 방에 접속중인 경우
-					// 나가는 사람 정보 out
+					string sendMsg;
+					string roomName;
+					sendMsg = name;
+					sendMsg += " 님이 나갔습니다!";
 
+					// 방이름 임시 저장
+					roomName = string(userMap.find(sock)->second.roomName);
+
+					// 개별 퇴장시에는 Room List 개별 Lock만
+					EnterCriticalSection(&roomMap.find(roomName)->second->listCs);
+					// 나갈때는 즉시 BoardCast
+					iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, STATUS_CHATTIG);
+
+					roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
+					LeaveCriticalSection(&roomMap.find(roomName)->second->listCs);
+					// Room List 개별 Lock만
+
+
+					EnterCriticalSection(&userCs); // 로그인된 사용자정보 변경 Lock
+					strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
+					userMap.find(sock)->second.status = STATUS_WAITING; // 상태 변경
+					LeaveCriticalSection(&userCs);
+
+					// room Lock은 방 완전 삭제시 에만
 					EnterCriticalSection(&roomCs);
-
-					if (roomMap.find(roomName) != roomMap.end()) { // null 체크 우선
-
-						EnterCriticalSection(
-							&roomMap.find(roomName)->second->listCs);
-						roomMap.find(roomName)->second->userList.remove(sock);
-
-						LeaveCriticalSection(
-							&roomMap.find(roomName)->second->listCs);
-
+					if (roomMap.find(roomName) != roomMap.end()) {
 						if ((roomMap.find(roomName)->second)->userList.size() == 0) { // 방인원 0명이면 방 삭제
-							DeleteCriticalSection(
-								&roomMap.find(roomName)->second->listCs);
-							// 방 별로 가진 CS를 Delete 친다
-
+							DeleteCriticalSection(&roomMap.find(roomName)->second->listCs);
 							roomMap.erase(roomName);
-							LeaveCriticalSection(&roomCs);
-						}
-						else {
-							string sendMsg = name;
-							// 이름먼저 복사 NAME_SIZE까지
-							sendMsg += " 님이 나갔습니다!";
-
-							EnterCriticalSection(&userCs);
-							string roomN = userMap.find(sock)->second.roomName;
-							LeaveCriticalSection(&userCs);
-							int roomMapCnt = roomMap.count(roomN);
-
-							if (roomMapCnt != 0) { // null 검사
-								// SendQueue에 Insert
-								InsertSendQueue(SEND_ROOM, sendMsg, userMap.find(sock)->second.roomName, 0, STATUS_CHATTIG);
-							}
-
-							LeaveCriticalSection(&roomCs);
 						}
 					}
-					else {
-						LeaveCriticalSection(&roomCs);
-					}
+					LeaveCriticalSection(&roomCs);
 				}
 				EnterCriticalSection(&userCs);
 				userMap.erase(sock); // 접속 소켓 정보 삭제
@@ -795,10 +782,6 @@ namespace BusinessService {
 			strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
 			idSet.erase(userMap.find(sock)->second.userId); // 로그인 셋에서 제외
 			LeaveCriticalSection(&idCs);
-			// DB데이터 로그아웃으로
-			Vo vo;
-			vo.setUserId(id);
-			dao->LogoutUser(vo);
 
 			EnterCriticalSection(&userCs);
 			userMap.erase(sock); // 접속 소켓 정보 삭제
@@ -1109,14 +1092,73 @@ namespace BusinessService {
 
 		for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
 			if (strcmp(nickName, iter->second.userName) == 0) {
-				ClientExit(iter->first);
+				SOCKET sock = iter->first;
+
+				// 세션정보 있을때는 => 세션정보 방 정보 제거 필요
+				char roomName[NAME_SIZE];
+				char name[NAME_SIZE];
+				char id[NAME_SIZE];
+
+				strncpy(roomName, userMap.find(sock)->second.roomName,
+					NAME_SIZE);
+				strncpy(name, userMap.find(sock)->second.userName, NAME_SIZE);
+				strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
+				
+				// 로그인 Set에서 out
+				EnterCriticalSection(&idCs);
+				idSet.erase(id);
+				LeaveCriticalSection(&idCs);
+
+				// 방이름 임시 저장
+				if (userMap.find(sock)->second.status == STATUS_CHATTIG) { // 방에 접속중인 경우
+					string sendMsg;
+					string roomName;
+					sendMsg = name;
+					sendMsg += " 님이 나갔습니다!";
+
+					// 방이름 임시 저장
+					roomName = string(userMap.find(sock)->second.roomName);
+
+					// 개별 퇴장시에는 Room List 개별 Lock만
+					EnterCriticalSection(&roomMap.find(roomName)->second->listCs);
+					// 나갈때는 즉시 BoardCast
+					iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, STATUS_CHATTIG);
+
+					roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
+					LeaveCriticalSection(&roomMap.find(roomName)->second->listCs);
+					// Room List 개별 Lock만
+
+
+					EnterCriticalSection(&userCs); // 로그인된 사용자정보 변경 Lock
+					strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
+					userMap.find(sock)->second.status = STATUS_WAITING; // 상태 변경
+					LeaveCriticalSection(&userCs);
+
+					// room Lock은 방 완전 삭제시 에만
+					EnterCriticalSection(&roomCs);
+					if (roomMap.find(roomName) != roomMap.end()) {
+						if ((roomMap.find(roomName)->second)->userList.size() == 0) { // 방인원 0명이면 방 삭제
+							DeleteCriticalSection(&roomMap.find(roomName)->second->listCs);
+							roomMap.erase(roomName);
+						}
+					}
+					LeaveCriticalSection(&roomCs);
+				}
+				string str = "당신은 관리자에의해 강퇴되었습니다";
+				InsertSendQueue(SEND_ME, str.c_str(), "", sock, STATUS_LOGOUT);
+
+				EnterCriticalSection(&userCs);
+				userMap.erase(sock); // 접속 소켓 정보 삭제
+				cout << "현재 접속 인원 수 : " << userMap.size() << endl;
+				LeaveCriticalSection(&userCs);
+				
 				break;
 			}
 		}
 	}
 
 	void BusinessService::ReturnUserCnt(SOCKET socket) {
-		InsertSendQueue(SEND_ME, "12", "", socket, userMap.size());
+		InsertSendQueue(SEND_ME, "reCnt", "", socket, userMap.size());
 	}
 
 	IocpService::IocpService* BusinessService::getIocpService() {

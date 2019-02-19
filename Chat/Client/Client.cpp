@@ -345,7 +345,7 @@ short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
 				(char*)&(ioInfo->bodySize));
 			CharPool* charPool = CharPool::getInstance();
 			ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte까지 카피 가능
-			if (bytesTrans - ioInfo->bodySize > 0) { // 패킷 뭉쳐있는 경우
+			if ((bytesTrans - ioInfo->bodySize > 0) && (bytesTrans - ioInfo->bodySize <= BUF_SIZE)) { // 패킷 뭉쳐있는 경우
 				copy(ioInfo->buffer, ioInfo->buffer + ioInfo->bodySize,
 					((char*)ioInfo->recvBuffer));
 
@@ -357,10 +357,13 @@ short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
 					((char*)ioInfo->recvBuffer));
 				return 0;
 			}
-			else { // 바디 내용 부족 => RecvMore에서 받을 부분 복사
+			else  if (bytesTrans - ioInfo->bodySize < 0) { // 바디 내용 부족 => RecvMore에서 받을 부분 복사
 				copy(ioInfo->buffer, ioInfo->buffer + bytesTrans, ((char*)ioInfo->recvBuffer));
 				ioInfo->recvByte = bytesTrans;
 				return bytesTrans - ioInfo->bodySize;
+			}
+			else {
+				return 0;
 			}
 		}
 		else if (bytesTrans == 1) { // 헤더 부족
@@ -508,7 +511,6 @@ unsigned WINAPI RecvMsgThread(LPVOID pCompPort) {
 				if (remainByte >= 0) {
 					int status;
 					char *msg = DataCopy(ioInfo, &status);
-					
 					// Client의 상태 정보 갱신 필수
 					// 서버에서 준것으로 갱신
 					if (status == STATUS_LOGOUT || status == STATUS_WAITING

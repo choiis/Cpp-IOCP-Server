@@ -13,7 +13,7 @@
 #include <concurrent_queue.h>
 #include "common.h"
 
-#define BLOCK_SIZE 1024
+#define BLOCK_SIZE 4096
 
 class CharPool {
 private:

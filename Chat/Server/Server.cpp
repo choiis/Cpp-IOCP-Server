@@ -73,7 +73,7 @@ unsigned WINAPI WorkThread(void *arg) {
 						businessService->ReturnUserCnt(jobData.socket);
 					}
 					else if (jobData.direction == BAN) {
-						businessService->BanUser(jobData.socket, jobData.msg.c_str());
+						businessService->BanUser(jobData.socket, jobData.msg.substr(0, jobData.nowStatus).c_str());
 					}
 					else {
 						businessService->StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());

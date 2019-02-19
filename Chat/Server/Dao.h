@@ -38,8 +38,6 @@ public:
 
 	void UpdateUser(Vo& vo);
 
-	void LogoutUser(Vo& vo);
-
 	void InsertUser(Vo& vo);
 
 	void InsertLogin(Vo& vo);
