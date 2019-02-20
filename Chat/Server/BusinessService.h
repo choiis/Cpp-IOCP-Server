@@ -126,7 +126,7 @@ public:
 	// node 서버에서 강퇴하기
 	void BanUser(SOCKET socket, const char* nickName);
 	// node 서버로 로그인 유저수 반환
-	void ReturnUserCnt(SOCKET socket);
+	void CallCnt(SOCKET socket, const DWORD& cnt);
 
 	const unordered_set<string>& getIdSet() const {
 		return idSet;

@@ -1157,8 +1157,10 @@ namespace BusinessService {
 		}
 	}
 
-	void BusinessService::ReturnUserCnt(SOCKET socket) {
-		InsertSendQueue(SEND_ME, "reCnt", "", socket, userMap.size());
+	void BusinessService::CallCnt(SOCKET socket, const DWORD& cnt) {
+		char msg[10];
+		sprintf(msg, "%d", cnt);
+		InsertSendQueue(SEND_ME, msg, "", socket, userMap.size());
 	}
 
 	IocpService::IocpService* BusinessService::getIocpService() {

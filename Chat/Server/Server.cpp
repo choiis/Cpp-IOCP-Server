@@ -22,6 +22,10 @@ queue<JOB_DATA> jobQueue;
 
 CRITICAL_SECTION queueCs;
 
+DWORD packetCnt = 0;
+
+CRITICAL_SECTION packetCs;
+
 // DB log insert를 담당하는 스레드
 unsigned WINAPI SQLThread(void *arg) {
 
@@ -69,13 +73,21 @@ unsigned WINAPI WorkThread(void *arg) {
 				if (!businessService->SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
 					// 로그인 이전 로직 처리
 					
-					if (jobData.direction == USERCNT) { // node js 서버로 전체 로그인된 유저수 반환
-						businessService->ReturnUserCnt(jobData.socket);
+					if (jobData.direction == CALLCOUNT) { // node js 서버로 전체 로그인된 유저수 반환
+						EnterCriticalSection(&packetCs);
+						DWORD cnt = packetCnt;
+						packetCnt = 0;
+						LeaveCriticalSection(&packetCs);
+						businessService->CallCnt(jobData.socket, cnt);
 					}
 					else if (jobData.direction == BAN) {
 						businessService->BanUser(jobData.socket, jobData.msg.substr(0, jobData.nowStatus).c_str());
 					}
-					else {
+					else if (jobData.direction == EXIT) {
+						// 정상종료
+						exit(EXIT_SUCCESS);
+					}
+					else { // 관리콘솔이 아니라 클라이언트에서 보낼 때
 						businessService->StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());
 					}
 					// 세션값 없음 => 로그인 이전 분기 끝
@@ -171,6 +183,9 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 			}
 
 			EnterCriticalSection(&queueCs); // jobQueue Lock횟수를 줄인다
+			EnterCriticalSection(&packetCs);
+			packetCnt += packetQueue.size();
+			LeaveCriticalSection(&packetCs);
 			while (!packetQueue.empty()) { // packetQueue -> jobQueue 
 				JOB_DATA jobData = packetQueue.front();
 				packetQueue.pop();
@@ -254,6 +269,8 @@ int main(int argc, char* argv[]) {
 
 	InitializeCriticalSectionAndSpinCount(&queueCs, 2000);
 
+	InitializeCriticalSectionAndSpinCount(&packetCs, 2000);
+	
 	businessService = new BusinessService::BusinessService();
 	
 	// Thread Pool Client에게 패킷 받는 동작
@@ -299,6 +316,8 @@ int main(int argc, char* argv[]) {
 				str.c_str(), hClientSock, STATUS_LOGOUT);
 	}
 	DeleteCriticalSection(&queueCs);
+
+	DeleteCriticalSection(&packetCs);
 	
 	delete businessService;
 

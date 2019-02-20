@@ -27,7 +27,7 @@ public:
 	// Singleton Instance 를 반환
 	static CharPool* getInstance() {
 		if (instance == nullptr) {
-			cout << "char 메모리풀 10000개 할당!" << endl;
+			cout << "char Memory 30000 Piece!" << endl;
 			instance = new CharPool();
 		}
 		return instance;

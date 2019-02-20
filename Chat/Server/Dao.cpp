@@ -24,7 +24,7 @@ Dao::Dao() {
 	if (res == 1) {
 		std::cout << "DB connection ¼º°ø" << std::endl;
 	}
-	
+
 }
 
 Dao::~Dao() {

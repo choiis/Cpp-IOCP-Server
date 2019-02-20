@@ -46,8 +46,9 @@ using namespace std;
 #define LOG_OUT 13
 #define FILE_SEND 14
 
-#define USERCNT 20
+#define CALLCOUNT 20
 #define BAN 21
+#define EXIT 22
 // 로그인 중복 방지
 #define NOW_LOGOUT 0
 #define NOW_LOGIN 1
