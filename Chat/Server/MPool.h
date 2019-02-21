@@ -25,7 +25,7 @@ public:
 	// Singleton Instance ¸¦ ¹ÝÈ¯
 	static MPool* getInstance() {
 		if (instance == nullptr) {
-			cout << "ioInfo Memory 30000 Piece!" << endl;
+			cout << "ioInfo Memory 50000 Piece!" << endl;
 			instance = new MPool();
 		}
 		return instance;

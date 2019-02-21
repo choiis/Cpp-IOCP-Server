@@ -8,11 +8,11 @@
 #include "CharPool.h"
 // »ý¼ºÀÚ
 CharPool::CharPool() {
-	data = (char*)malloc(BLOCK_SIZE * 30000);
+	data = (char*)malloc(BLOCK_SIZE * 50000);
 	DWORD i = 0;
-	len = 30000;
-	memset((char*)data, 0, BLOCK_SIZE * 30000);
-	for (i = 0; i < 30000; i++) {
+	len = 50000;
+	memset((char*)data, 0, BLOCK_SIZE * 50000);
+	for (i = 0; i < 50000; i++) {
 		poolQueue.push(data + (BLOCK_SIZE * i));
 	}
 }

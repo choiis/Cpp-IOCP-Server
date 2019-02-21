@@ -120,7 +120,7 @@ public:
 	// 친구추가 기능
 	void AddFriend(SOCKET sock, const string& msg, const string& id, int status);
 	// 연결중 socket Insert
-	void InsertLiveSocket(SOCKET& hClientSock,SOCKADDR_IN& addr);
+	void InsertLiveSocket(const SOCKET& hClientSock, const SOCKADDR_IN& addr);
 	// socket 죽었는지 확인
 	bool IsSocketDead(SOCKET socket);
 	// node 서버에서 강퇴하기

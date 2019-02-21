@@ -35,7 +35,7 @@ namespace FileService {
 
 	// UDP파일전송
 	// 메서드밖에서 방 리스트에대한 동기화 
-	void FileService::SendToRoomFile(FILE* fp, const string dir, shared_ptr<ROOM_DATA> second, const unordered_map<SOCKET, string>& liveSocket) {
+	void FileService::SendToRoomFile(FILE* fp, const string& dir, shared_ptr<ROOM_DATA> second, const unordered_map<SOCKET, string>& liveSocket) {
 		
 		list<SOCKET> userList = second->userList;
 		list<SOCKET>::const_iterator itr; // 변경 불가능 객체를 가리키는 반복자

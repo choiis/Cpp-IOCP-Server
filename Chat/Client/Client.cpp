@@ -495,6 +495,7 @@ unsigned WINAPI RecvMsgThread(LPVOID pCompPort) {
 			closesocket(sock);
 			MPool* mp = MPool::getInstance();
 			mp->Free(ioInfo);
+			exit(EXIT_SUCCESS);
 		}
 		else if (READ_MORE == ioInfo->serverMode
 			|| READ == ioInfo->serverMode) {

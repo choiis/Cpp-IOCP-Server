@@ -298,16 +298,16 @@ unsigned WINAPI SendMsgThread(void *arg) {
 // 클라이언트의 명령을 만들어 Send에게 보낼 스레드9
 unsigned WINAPI MakeMsgThread(void *arg) {
 
+	string alpha1 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	string alpha2 = "abcdefghijklmnopqrstuvwxyz";
+	string password = "1234";
+	string msgs[10] = { "안녕하세요!", "반갑습니다!", "고맙습니다", "Hello World", "곤니치와", "아리가토", "C++"
+		, "굿모닝", "땡큐", "하이" };
+	string rooms[16] = { "EPL", "세리에", "라리가", "분데스리가", "월드컵", "유로", "아시안컵"
+		, "K리그", "J리그", "UCL", "UEL", "ACL", "리그앙", "에레디비시", "CSL", "수페르리가" };
 	while (1) {
 		// 받기 큐를 반환받는다
 
-		string alpha1 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-		string alpha2 = "abcdefghijklmnopqrstuvwxyz";
-		string password = "1234";
-		string msgs[10] = {"안녕하세요!","반갑습니다!","고맙습니다","Hello World","곤니치와","아리가토","C++"
-		,"굿모닝","땡큐","하이"};
-		string rooms[16] = { "EPL", "세리에", "라리가", "분데스리가", "월드컵", "유로", "아시안컵"
-			, "K리그", "J리그", "UCL", "UEL", "ACL", "리그앙", "에레디비시", "CSL", "수페르리가" };
 		INFO_CLIENT info = clientQueue->popMakeQueue();
 
 		if (info.job == 1) {
@@ -358,37 +358,41 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 					info.message = msg2;
 				}
 			}
-			else if (cStatus == STATUS_WAITING) {
-				int directionNum = (rand() % 10);
-				if (directionNum <= 6) { // 70퍼센트 방입장
-					int randNum1 = (rand() % 16);
-					string roomName = rooms[randNum1];
-					
-					info.direction = ROOM_ENTER;
-					info.message = roomName;
-				}
-				else { //30 퍼센트 방만들기
-					int randNum1 = (rand() % 16);
-					string roomName = rooms[randNum1];
-					
-					info.direction = ROOM_MAKE;
-					info.message = roomName;
-				}
-			}
-			else if (cStatus == STATUS_CHATTIG) {
-				int directionNum = (rand() % 70);
-				string msg = "";
-				if (directionNum == 1) {
-					msg = "\\out";
+			else if (cStatus == STATUS_WAITING || cStatus == STATUS_CHATTIG) {
+				int statusSelect = (rand() % 4);
+				if (statusSelect == 0) {
+					int directionNum = (rand() % 10);
+					if (directionNum <= 6) { // 70퍼센트 방입장
+						int randNum1 = (rand() % 16);
+						string roomName = rooms[randNum1];
+
+						info.direction = ROOM_ENTER;
+						info.message = roomName;
+					}
+					else { //30 퍼센트 방만들기
+						int randNum1 = (rand() % 16);
+						string roomName = rooms[randNum1];
+
+						info.direction = ROOM_MAKE;
+						info.message = roomName;
+					}
 				}
 				else {
-					msg = msgs[directionNum % 10];
+					int directionNum = (rand() % 70);
+					string msg = "";
+					if (directionNum == 1) {
+						msg = "\\out";
+					}
+					else {
+						msg = msgs[directionNum % 10];
+					}
+
+					info.direction = -1;
+					info.message = msg;
 				}
 				
-				info.direction = -1;
-				info.message = msg;
 			}
-
+			
 			info.job = 0;
 			clientQueue->pushSendQueue(info);
 		}
@@ -415,6 +419,7 @@ unsigned WINAPI RecvMsgThread(LPVOID hComPort) {
 			closesocket(sock);
 			MPool* mp = MPool::getInstance();
 			mp->Free(ioInfo);
+			exit(EXIT_SUCCESS);
 		}
 		else if (READ_MORE == ioInfo->serverMode
 			|| READ == ioInfo->serverMode) {
@@ -566,14 +571,14 @@ int main() {
 	// 수신 스레드 동작
 	// 만들어진 RecvMsg를 hComPort CP 오브젝트에 할당한다
 	// RecvMsg에서 Recv가 완료되면 동작할 부분이 있다
-	for (int i = 0; i < (2 * clientCnt) / 3; i++) {
+	for (int i = 0; i < 2 * clientCnt; i++) {
 		_beginthreadex(NULL, 0, RecvMsgThread, (LPVOID)hComPort, 0,
 			NULL);
 	}
 
 	// 동작을 만들어줄 스레드 동작
 	// 만들어진 동작큐를 hComPort SendMsgThread에서 처리하게 된다
-	for (int i = 0; i < (3 * process) / 2; i++)
+	for (int i = 0; i < min(clientCnt / 10 , 10); i++)
 	{
 		_beginthreadex(NULL, 0, MakeMsgThread,
 			NULL, 0,
@@ -583,7 +588,7 @@ int main() {
 	// 송신 스레드 동작
 	// Thread안에서 clientSocket으로 Send해줄거니까 인자로 넘겨준다
 	// CP랑 Send는 연결 안되어있음 GetQueuedCompletionStatus에서 Send 완료처리 필요없음
-	for (int i = 0; i < (3 * process) / 2; i++)
+	for (int i = 0; i < min(clientCnt / 5, 20); i++)
 	{
 		_beginthreadex(NULL, 0, SendMsgThread,
 			NULL, 0,
@@ -592,14 +597,8 @@ int main() {
 
 	while (true) {
 		int moreClient;
-		int speed;
-
 		//	cout << " 더만들 클라이언트 수를 입력하세요" << endl;
 		cin >> moreClient;
-
-		//	cout << " 패킷 보낼 1/1000 초 단위를 입력하세요" << endl;
-		//	cin >> speed;
-
 	}
 	// 임계영역 Object 반환
 	DeleteCriticalSection(&userCs);

@@ -45,7 +45,7 @@ using namespace std;
 #define FRIEND_DELETE 12
 #define LOG_OUT 13
 #define FILE_SEND 14
-
+// Node 관리콘솔에서 보낼 메세지
 #define CALLCOUNT 20
 #define BAN 21
 #define EXIT 22

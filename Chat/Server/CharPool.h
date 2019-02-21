@@ -27,7 +27,7 @@ public:
 	// Singleton Instance ¸¦ ¹ÝÈ¯
 	static CharPool* getInstance() {
 		if (instance == nullptr) {
-			cout << "char Memory 30000 Piece!" << endl;
+			cout << "char Memory 50000 Piece!" << endl;
 			instance = new CharPool();
 		}
 		return instance;

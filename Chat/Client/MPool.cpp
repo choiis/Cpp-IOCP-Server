@@ -8,11 +8,11 @@
 #include "MPool.h"
 // »ý¼ºÀÚ
 MPool::MPool() {
-	data = (char*)malloc(sizeof(PER_IO_DATA)* 20000);
+	data = (char*)malloc(sizeof(PER_IO_DATA)* 30000);
 	DWORD i = 0;
-	len = 20000;
-	memset((char*)data, 0, sizeof(PER_IO_DATA)* 20000);
-	for (i = 0; i < 20000; i++) {
+	len = 30000;
+	memset((char*)data, 0, sizeof(PER_IO_DATA)* 30000);
+	for (i = 0; i < 30000; i++) {
 		poolQueue.push(data + (sizeof(PER_IO_DATA)* i));
 	}
 }

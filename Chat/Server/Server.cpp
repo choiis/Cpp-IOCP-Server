@@ -274,23 +274,23 @@ int main(int argc, char* argv[]) {
 	businessService = new BusinessService::BusinessService();
 	
 	// Thread Pool Client에게 패킷 받는 동작
-	for (int i = 0; i < process / 2; i++) {
+	for (int i = 0; i < process; i++) {
 		// 만들어진 HandleThread를 hComPort CP 오브젝트에 할당한다
 		_beginthreadex(NULL, 0, RecvThread, (LPVOID)hComPort, 0, NULL);
 	}
 
 	// Thread Pool 비지니스 로직 담당
-	for (int i = 0; i < process; i++) {
+	for (int i = 0; i < 2 * process; i++) {
 		_beginthreadex(NULL, 0, WorkThread, NULL, 0, NULL);
 	}
 
 	// Thread Pool 로그 저장 SQL 실행에 쓰임
-	for (int i = 0; i < process / 3; i++) {
+	for (int i = 0; i < process; i++) {
 		_beginthreadex(NULL, 0, SQLThread, NULL, 0, NULL);
 	}
 
 	// Thread Pool BroadCast 해줌
-	for (int i = 0; i < (process * 2) / 3; i++) {
+	for (int i = 0; i < (process * 5) / 3; i++) {
 		_beginthreadex(NULL, 0, SendThread, NULL, 0, NULL);
 	}
 

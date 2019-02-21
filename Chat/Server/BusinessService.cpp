@@ -172,7 +172,6 @@ namespace BusinessService {
 	// InsertSendQueue 공통화
 	void BusinessService::InsertSendQueue(int direction, const string& msg, const string& roomName, SOCKET socket, int status) {
 
-		EnterCriticalSection(&sendCs);
 		// SendQueue에 Insert
 		Send_DATA sendData;
 		if (direction == SEND_ME) {
@@ -187,7 +186,7 @@ namespace BusinessService {
 			sendData.roomName = roomName;
 			sendData.status = status;
 		}
-
+		EnterCriticalSection(&sendCs);
 		sendQueue.push(sendData);
 		LeaveCriticalSection(&sendCs);
 	}
@@ -406,12 +405,10 @@ namespace BusinessService {
 
 				}
 				else { // 비밀번호 틀림
-
 					msg.append("비밀번호 틀림!\n");
 					msg.append(loginBeforeMessage);
 
 					InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
-
 				}
 			}
 
@@ -1072,7 +1069,7 @@ namespace BusinessService {
 		}
 	}
 
-	void BusinessService::InsertLiveSocket(SOCKET& hClientSock, SOCKADDR_IN& addr) {
+	void BusinessService::InsertLiveSocket(const SOCKET& hClientSock, const SOCKADDR_IN& addr) {
 		EnterCriticalSection(&liveSocketCs);
 		liveSocket.insert(pair<SOCKET, string>(hClientSock, inet_ntoa(addr.sin_addr)));
 		LeaveCriticalSection(&liveSocketCs);
