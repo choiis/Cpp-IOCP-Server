@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <process.h>
 #include <direct.h>
+#include <atomic>
 #include "BusinessService.h"
 
 using namespace std;
@@ -22,9 +23,7 @@ queue<JOB_DATA> jobQueue;
 
 CRITICAL_SECTION queueCs;
 
-DWORD packetCnt = 0;
-
-CRITICAL_SECTION packetCs;
+atomic<int> packetCnt = 0;
 
 // DB log insert를 담당하는 스레드
 unsigned WINAPI SQLThread(void *arg) {
@@ -73,11 +72,10 @@ unsigned WINAPI WorkThread(void *arg) {
 				if (!businessService->SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
 					// 로그인 이전 로직 처리
 					
-					if (jobData.direction == CALLCOUNT) { // node js 서버로 전체 로그인된 유저수 반환
-						EnterCriticalSection(&packetCs);
-						DWORD cnt = packetCnt;
+					if (jobData.direction == CALLCOUNT) { // node js 서버로 전체 로그인된 유저수 
+						
+						int cnt = packetCnt;
 						packetCnt = 0;
-						LeaveCriticalSection(&packetCs);
 						businessService->CallCnt(jobData.socket, cnt);
 					}
 					else if (jobData.direction == BAN) {
@@ -183,9 +181,7 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 			}
 
 			EnterCriticalSection(&queueCs); // jobQueue Lock횟수를 줄인다
-			EnterCriticalSection(&packetCs);
-			packetCnt += packetQueue.size();
-			LeaveCriticalSection(&packetCs);
+			packetCnt.fetch_add(packetQueue.size());
 			while (!packetQueue.empty()) { // packetQueue -> jobQueue 
 				JOB_DATA jobData = packetQueue.front();
 				packetQueue.pop();
@@ -268,8 +264,6 @@ int main(int argc, char* argv[]) {
 	CharPool* charPool = CharPool::getInstance(); // 메모리풀 초기화 지점
 
 	InitializeCriticalSectionAndSpinCount(&queueCs, 2000);
-
-	InitializeCriticalSectionAndSpinCount(&packetCs, 2000);
 	
 	businessService = new BusinessService::BusinessService();
 	
@@ -317,8 +311,6 @@ int main(int argc, char* argv[]) {
 	}
 	DeleteCriticalSection(&queueCs);
 
-	DeleteCriticalSection(&packetCs);
-	
 	delete businessService;
 
 	return 0;

@@ -330,7 +330,7 @@ namespace BusinessService {
 
 				Vo vo;
 				vo.setUserId(sArr[0]);
-				vo = dao->selectUser(vo);
+				dao->selectUser(vo);
 
 				if (strcmp(vo.getUserId(), "") == 0) { // ID 중복체크 => 계정 없음
 
@@ -374,7 +374,7 @@ namespace BusinessService {
 
 				Vo vo;
 				vo.setUserId(sArr[0]);
-				vo = dao->selectUser(vo);
+				dao->selectUser(vo);
 
 				if (strcmp(vo.getUserId(), "") == 0) { // 계정 없음
 
@@ -1155,9 +1155,9 @@ namespace BusinessService {
 	}
 
 	void BusinessService::CallCnt(SOCKET socket, const DWORD& cnt) {
-		char msg[10];
-		sprintf(msg, "%d", cnt);
-		InsertSendQueue(SEND_ME, msg, "", socket, userMap.size());
+		char msg[30];
+		sprintf(msg, "{\"packet\":%d , \"cnt\":%d}", cnt, userMap.size());
+		InsertSendQueue(SEND_ME, msg, "", socket, 0);
 	}
 
 	IocpService::IocpService* BusinessService::getIocpService() {

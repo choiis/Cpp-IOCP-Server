@@ -44,7 +44,7 @@ Dao::~Dao() {
 }
 	
 // ID정보 select
-Vo& Dao::selectUser(Vo& vo){
+void Dao::selectUser(Vo& vo){
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	char query[512] = "select userid,password,nickname from cso_id where userid = ? ";
@@ -75,12 +75,12 @@ Vo& Dao::selectUser(Vo& vo){
 	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
 
 	LeaveCriticalSection(&this->cs);
-	return vo;
+
 }
 
 
 // ID정보 update
-void Dao::UpdateUser(Vo& vo){
+void Dao::UpdateUser(const Vo& vo){
 	EnterCriticalSection(&this->cs);
 	
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -99,7 +99,7 @@ void Dao::UpdateUser(Vo& vo){
 }
 
 // ID정보 insert
-void Dao::InsertUser(Vo& vo) {
+void Dao::InsertUser(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	
@@ -118,7 +118,7 @@ void Dao::InsertUser(Vo& vo) {
 }
 
 // 로그인 정보 insert
-void Dao::InsertLogin(Vo& vo) {
+void Dao::InsertLogin(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	
@@ -137,7 +137,7 @@ void Dao::InsertLogin(Vo& vo) {
 }
 
 // 지시 로그 insert
-void Dao::InsertDirection(Vo& vo) {
+void Dao::InsertDirection(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -161,7 +161,7 @@ void Dao::InsertDirection(Vo& vo) {
 }
 
 // 채팅 로그 insert
-void  Dao::InsertChatting(Vo& vo) {
+void  Dao::InsertChatting(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	
@@ -179,7 +179,7 @@ void  Dao::InsertChatting(Vo& vo) {
 }
 
 // 친구 또는 차단관계 insert
-int Dao::InsertRelation(Vo& vo){
+int Dao::InsertRelation(const Vo& vo){
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 
@@ -201,7 +201,7 @@ int Dao::InsertRelation(Vo& vo){
 }
 
 // ID정보 있는지 확인
-Vo& Dao::findUserId(Vo& vo) {
+Vo& Dao::findUserId(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	char query[512] = "select userid, nickname from cso_id where nickname = ? ";
@@ -235,7 +235,7 @@ Vo& Dao::findUserId(Vo& vo) {
 	return vo2;
 }
 // 친구 정보 select
-vector<Vo> Dao::selectFriends(Vo& vo) {
+vector<Vo> Dao::selectFriends(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	char query[1024] = "select T1.relationfrom, T1.relationto, T2.nickname from cso_relation T1, cso_id T2	where T1.relationto = T2.userid	and T1.relationfrom = ? and T1.relationcode = 1";
@@ -272,7 +272,7 @@ vector<Vo> Dao::selectFriends(Vo& vo) {
 }
 
 // 친구한명정보 select
-Vo& Dao::selectOneFriend(Vo& vo) {
+Vo& Dao::selectOneFriend(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	char query[1024] = "select T1.relationfrom, T1.relationto, T2.nickname from cso_relation T1, cso_id T2	where T1.relationto = T2.userid	and T1.relationfrom = ? and T2.nickname = ? and T1.relationcode = 1";
@@ -306,7 +306,7 @@ Vo& Dao::selectOneFriend(Vo& vo) {
 }
 
 // 친구 또는 차단관계 delete
-int Dao::DeleteRelation(Vo& vo) {
+int Dao::DeleteRelation(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 

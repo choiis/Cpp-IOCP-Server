@@ -26,6 +26,10 @@ public:
 
 	Vo(const char* userId, const char* nickName, const char* roomName, const char* msg, int status, int direction, const char* password, const char* relationto, int relationcode);
 
+	Vo(const Vo& vo);
+
+	Vo& operator=(const Vo& vo);
+
 	virtual ~Vo();
 
 	int getDirection() const {
