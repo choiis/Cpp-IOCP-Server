@@ -44,7 +44,7 @@ Dao::~Dao() {
 }
 	
 // IDÁ¤º¸ select
-void Dao::selectUser(Vo& vo){
+Vo& Dao::selectUser(Vo& vo){
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	char query[512] = "select userid,password,nickname from cso_id where userid = ? ";
@@ -71,11 +71,11 @@ void Dao::selectUser(Vo& vo){
 		vo.setUserId("");
 	}
 
-	
 	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
 
 	LeaveCriticalSection(&this->cs);
 
+	return vo;
 }
 
 

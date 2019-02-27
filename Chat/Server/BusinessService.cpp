@@ -330,7 +330,7 @@ namespace BusinessService {
 
 				Vo vo;
 				vo.setUserId(sArr[0]);
-				dao->selectUser(vo);
+				vo = move(dao->selectUser(vo));
 
 				if (strcmp(vo.getUserId(), "") == 0) { // ID 중복체크 => 계정 없음
 
@@ -374,7 +374,7 @@ namespace BusinessService {
 
 				Vo vo;
 				vo.setUserId(sArr[0]);
-				dao->selectUser(vo);
+				vo = move(dao->selectUser(vo));
 
 				if (strcmp(vo.getUserId(), "") == 0) { // 계정 없음
 

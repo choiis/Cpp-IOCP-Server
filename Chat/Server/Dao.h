@@ -34,7 +34,7 @@ public:
 	Dao();
 	virtual ~Dao();
 
-	void selectUser(Vo& vo);
+	Vo& selectUser(Vo& vo);
 
 	void UpdateUser(const Vo& vo);
 
