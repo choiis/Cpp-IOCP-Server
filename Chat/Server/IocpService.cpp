@@ -33,7 +33,7 @@ void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, int status) {
 
 	ioInfo->wsaBuf.buf = (char*)packet;
 	ioInfo->wsaBuf.len = len;
-	ioInfo->serverMode = WRITE;
+	ioInfo->serverMode = Operation::SEND;
 	WSASend(mySock, &(ioInfo->wsaBuf), 1, NULL, 0, &(ioInfo->overlapped),
 	NULL);
 
@@ -62,7 +62,7 @@ void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
 
 		ioInfo->wsaBuf.buf = (char*)packet;
 		ioInfo->wsaBuf.len = len;
-		ioInfo->serverMode = WRITE;
+		ioInfo->serverMode = Operation::SEND;
 		ioInfo->recvByte = 0;
 
 		WSASend((*iter), &(ioInfo->wsaBuf), 1,
@@ -79,7 +79,7 @@ void IocpService::RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo) {
 	ioInfo->wsaBuf.len = BUF_SIZE;
 	memset(ioInfo->buffer, 0, BUF_SIZE);
 	ioInfo->wsaBuf.buf = ioInfo->buffer;
-	ioInfo->serverMode = READ_MORE;
+	ioInfo->serverMode = Operation::RECV_MORE;
 	// °è¼Ó Recv
 	WSARecv(sock, &(ioInfo->wsaBuf), 1, &recvBytes, &flags,
 			&(ioInfo->overlapped),
@@ -97,7 +97,7 @@ void IocpService::Recv(SOCKET sock) {
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 	ioInfo->wsaBuf.len = BUF_SIZE;
 	ioInfo->wsaBuf.buf = ioInfo->buffer;
-	ioInfo->serverMode = READ;
+	ioInfo->serverMode = Operation::RECV;
 	ioInfo->recvByte = 0;
 	ioInfo->totByte = 0;
 	ioInfo->bodySize = 0;

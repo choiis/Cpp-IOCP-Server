@@ -870,7 +870,7 @@ namespace BusinessService {
 
 			string sendMsg;
 			sendMsg = name;
-			sendMsg += " : ";
+			sendMsg += ":";
 			sendMsg += msg;
 
 			char roomName[NAME_SIZE];
@@ -942,7 +942,7 @@ namespace BusinessService {
 	short BusinessService::PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
 		// IO 완료후 동작 부분
 
-		if (READ == ioInfo->serverMode) {
+		if (iocpService->RECV == ioInfo->serverMode) {
 			if (bytesTrans >= 2) {
 				copy(ioInfo->buffer, ioInfo->buffer + 2,
 					(char*)&(ioInfo->bodySize));
@@ -978,7 +978,7 @@ namespace BusinessService {
 			}
 		}
 		else { // 더 읽기 (BodySize짤린경우)
-			ioInfo->serverMode = READ;
+			ioInfo->serverMode = iocpService->RECV;
 			if (ioInfo->recvByte < 2) { // Body정보 없음
 				copy(ioInfo->buffer, ioInfo->buffer + (2 - ioInfo->recvByte),
 					(char*)&(ioInfo->bodySize) + ioInfo->recvByte); // 가지고있는 Byte까지 카피

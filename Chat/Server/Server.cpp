@@ -141,11 +141,30 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 		
 		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
 			
+			int errorNum = WSAGetLastError();
+			switch (errorNum)
+			{case ERROR_IO_PENDING: // 대기열이 혼잡한 경우
+				cout << "ERROR_IO_PENDING " << endl;
+				break;
+			case ERROR_NETNAME_DELETED: // ungraceful close
+				cout << "ERROR_NETNAME_DELETED " << endl;
+				break;
+			case ERROR_SEM_TIMEOUT: // 네트워크단절현상으로 timeout
+				cout << "ERROR_SEM_TIMEOUT " << endl;
+				break;
+			case ERROR_OPERATION_ABORTED: // socket close Event
+				cout << "ERROR_OPERATION_ABORTED " << endl;
+				break;
+			default:
+				cout << "else " << endl;
+				break;
+			}
+			
 			businessService->ClientExit(sock);
 			MPool* mp = MPool::getInstance();
 			mp->Free(ioInfo);
-		} else if (READ == ioInfo->serverMode
-			|| READ_MORE == ioInfo->serverMode) { // Recv 가 기본 동작
+		} else if (businessService->getIocpService()->RECV == ioInfo->serverMode
+			|| businessService->getIocpService()->RECV_MORE == ioInfo->serverMode) { // Recv 가 기본 동작
 			// 데이터 읽기 과정
 			short remainByte = min(bytesTrans, BUF_SIZE); // 초기 Remain Byte
 			bool recvMore = false;
@@ -194,7 +213,8 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 				businessService->getIocpService()->Recv(
 					sock); // 패킷 더받기
 			}
-		} else if (WRITE == ioInfo->serverMode) { // Send 끝난경우
+		}
+		else if (businessService->getIocpService()->SEND == ioInfo->serverMode) { // Send 끝난경우
 
 			CharPool* charPool = CharPool::getInstance();
 

@@ -47,7 +47,7 @@ Dao::~Dao() {
 Vo& Dao::selectUser(Vo& vo){
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
-	char query[512] = "select userid,password,nickname from cso_id where userid = ? ";
+	char query[512] = "select userid,password,nickname from cso_id with (nolock) where userid = ? ";
 
 	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
 	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
@@ -204,7 +204,7 @@ int Dao::InsertRelation(const Vo& vo){
 Vo& Dao::findUserId(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
-	char query[512] = "select userid, nickname from cso_id where nickname = ? ";
+	char query[512] = "select userid, nickname from cso_id  with (nolock) where nickname = ? ";
 
 	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getNickName(), sizeof(vo.getNickName()), NULL);
 	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
@@ -238,7 +238,7 @@ Vo& Dao::findUserId(const Vo& vo) {
 vector<Vo> Dao::selectFriends(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
-	char query[1024] = "select T1.relationfrom, T1.relationto, T2.nickname from cso_relation T1, cso_id T2	where T1.relationto = T2.userid	and T1.relationfrom = ? and T1.relationcode = 1";
+	char query[1024] = "select T1.relationfrom, T1.relationto, T2.nickname from cso_relation T1 with (nolock), cso_id T2 with (nolock)	where T1.relationto = T2.userid	and T1.relationfrom = ? and T1.relationcode = 1";
 
 	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
 	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
@@ -275,7 +275,7 @@ vector<Vo> Dao::selectFriends(const Vo& vo) {
 Vo& Dao::selectOneFriend(const Vo& vo) {
 	EnterCriticalSection(&this->cs);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
-	char query[1024] = "select T1.relationfrom, T1.relationto, T2.nickname from cso_relation T1, cso_id T2	where T1.relationto = T2.userid	and T1.relationfrom = ? and T2.nickname = ? and T1.relationcode = 1";
+	char query[1024] = "select T1.relationfrom, T1.relationto, T2.nickname from cso_relation T1 with (nolock) , cso_id T2	with (nolock) where T1.relationto = T2.userid	and T1.relationfrom = ? and T2.nickname = ? and T1.relationcode = 1";
 
 	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getUserId(), sizeof(vo.getUserId()), NULL);
 	SQLBindParameter(hStmt, 2, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getRelationto(), sizeof(vo.getRelationto()), NULL);

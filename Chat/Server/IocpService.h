@@ -19,6 +19,12 @@ namespace IocpService {
 
 class IocpService {
 public:
+	enum Operation {
+		RECV = 1,
+		SEND = 2,
+		RECV_MORE = 3
+	};
+
 	IocpService();
 	virtual ~IocpService();
 
