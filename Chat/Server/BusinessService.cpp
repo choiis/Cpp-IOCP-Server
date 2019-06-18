@@ -17,11 +17,7 @@ namespace BusinessService {
 
 		InitializeCriticalSectionAndSpinCount(&roomCs, 2000);
 
-		InitializeCriticalSectionAndSpinCount(&sqlCs, 2000);
-
 		InitializeCriticalSectionAndSpinCount(&sendCs, 2000);
-
-		InitializeCriticalSectionAndSpinCount(&liveSocketCs, 2000);
 		
 		iocpService = new IocpService::IocpService();
 
@@ -45,22 +41,22 @@ namespace BusinessService {
 
 		DeleteCriticalSection(&roomCs);
 
-		DeleteCriticalSection(&sqlCs);
-
 		DeleteCriticalSection(&sendCs);
 
-		DeleteCriticalSection(&liveSocketCs);
 	}
 
 	void BusinessService::SQLwork() {
 
 		if (!sqlQueue.empty()) { // SQL insert 한번에
-			EnterCriticalSection(&sqlCs); // Lock최소화
-			queue<SQL_DATA> copySqlQueue = sqlQueue;
-			queue<SQL_DATA> emptyQueue; // 빈 큐
-			swap(sqlQueue, emptyQueue); // 빈 큐로 바꿔치기
-			LeaveCriticalSection(&sqlCs);
-
+			queue<SQL_DATA> copySqlQueue;
+			
+			{
+				lock_guard<mutex> guard(sqlCs);  // Lock최소화
+				copySqlQueue = sqlQueue;
+				queue<SQL_DATA> emptyQueue; // 빈 큐
+				swap(sqlQueue, emptyQueue); // 빈 큐로 바꿔치기
+			}
+			
 			while (!copySqlQueue.empty()) { // 여러 패킷 데이터 한꺼번에 처리
 				SQL_DATA sqlData = copySqlQueue.front();
 				copySqlQueue.pop();
@@ -215,18 +211,18 @@ namespace BusinessService {
 		Vo vo; // DB SQL문에 필요한 Data
 		vo.setUserId(userInfo.userId);
 		vo.setNickName(userInfo.userName);
+		{
+			lock_guard<mutex> guard(sqlCs);
 
-		EnterCriticalSection(&sqlCs);
-
-		SQL_DATA sqlData1, sqlData2;
-		sqlData1.vo = vo;
-		sqlData1.direction = UPDATE_USER;
-		sqlQueue.push(sqlData1); // 최근 로그인기록 업데이트
-		sqlData2.vo = vo;
-		sqlData2.direction = INSERT_LOGIN;
-		sqlQueue.push(sqlData2); // 로그인 DB에 기록
-
-		LeaveCriticalSection(&sqlCs);
+			SQL_DATA sqlData1, sqlData2;
+			sqlData1.vo = vo;
+			sqlData1.direction = UPDATE_USER;
+			sqlQueue.push(sqlData1); // 최근 로그인기록 업데이트
+			sqlData2.vo = vo;
+			sqlData2.direction = INSERT_LOGIN;
+			sqlQueue.push(sqlData2); // 로그인 DB에 기록
+		}
+		
 		msg = nickName;
 		msg.append("님 입장을 환영합니다!\n");
 		msg.append(waitRoomMessage);
@@ -240,10 +236,11 @@ namespace BusinessService {
 			cout << "정상 종료 " << endl;
 
 			// 콘솔 강제종료 처리
-			EnterCriticalSection(&liveSocketCs);
-			liveSocket.erase(sock);
-			LeaveCriticalSection(&liveSocketCs);
-
+			{
+				lock_guard<mutex> guard(liveSocketCs);
+				liveSocket.erase(sock);
+			}
+			
 			if (userMap.find(sock) != userMap.end()) {
 
 				// 세션정보 있을때는 => 세션정보 방 정보 제거 필요
@@ -802,12 +799,14 @@ namespace BusinessService {
 		vo.setDirection(direction);
 		vo.setStatus(status);
 
-		EnterCriticalSection(&sqlCs);
-		SQL_DATA sqlData;
-		sqlData.vo = vo;
-		sqlData.direction = INSERT_DIRECTION;
-		sqlQueue.push(sqlData); // 지시 기록 insert
-		LeaveCriticalSection(&sqlCs);
+		{
+			lock_guard<mutex> guard(sqlCs);
+			SQL_DATA sqlData;
+			sqlData.vo = vo;
+			sqlData.direction = INSERT_DIRECTION;
+			sqlQueue.push(sqlData); // 지시 기록 insert
+		}
+		
 	}
 
 	// 채팅방에서의 로직 처리
@@ -892,14 +891,14 @@ namespace BusinessService {
 			vo.setDirection(0);
 			vo.setStatus(0);
 
-			EnterCriticalSection(&sqlCs);
+			{
+				lock_guard<mutex> guard(sqlCs);
 
-			SQL_DATA sqlData;
-			sqlData.vo = vo;
-			sqlData.direction = INSERT_CHATTING;
-			sqlQueue.push(sqlData); // 대화 기록 업데이트
-
-			LeaveCriticalSection(&sqlCs);
+				SQL_DATA sqlData;
+				sqlData.vo = vo;
+				sqlData.direction = INSERT_CHATTING;
+				sqlQueue.push(sqlData); // 대화 기록 업데이트
+			}
 		}
 	}
 
@@ -1070,9 +1069,10 @@ namespace BusinessService {
 	}
 
 	void BusinessService::InsertLiveSocket(const SOCKET& hClientSock, const SOCKADDR_IN& addr) {
-		EnterCriticalSection(&liveSocketCs);
-		liveSocket.insert(pair<SOCKET, string>(hClientSock, inet_ntoa(addr.sin_addr)));
-		LeaveCriticalSection(&liveSocketCs);
+		{
+			lock_guard<mutex> guard(liveSocketCs);
+			liveSocket.insert(pair<SOCKET, string>(hClientSock, inet_ntoa(addr.sin_addr)));
+		}
 	}
 
 	bool BusinessService::IsSocketDead(SOCKET socket){

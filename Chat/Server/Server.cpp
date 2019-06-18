@@ -1,4 +1,4 @@
-//============================================================================
+ï»¿//============================================================================
 // Name        : Server.cpp
 // Author      :
 // Version     :
@@ -15,27 +15,27 @@
 
 using namespace std;
 
-// ³»ºÎ ºñÁö´Ï½º ·ÎÁ÷ Ã³¸® Å¬·¡½º
+// ë‚´ë¶€ ë¹„ì§€ë‹ˆìŠ¤ ë¡œì§ ì²˜ë¦¬ í´ë˜ìŠ¤
 BusinessService::BusinessService *businessService;
 
-// Recv°¡ Work¿¡°Ô Àü´Ş
+// Recvê°€ Workì—ê²Œ ì „ë‹¬
 queue<JOB_DATA> jobQueue;
 
 CRITICAL_SECTION queueCs;
 
 atomic<int> packetCnt = 0;
 
-// DB log insert¸¦ ´ã´çÇÏ´Â ½º·¹µå
+// DB log insertë¥¼ ë‹´ë‹¹í•˜ëŠ” ìŠ¤ë ˆë“œ
 unsigned WINAPI SQLThread(void *arg) {
 
 	while (true) {
 		businessService->SQLwork();
-	}	
+	}
 
 	return 0;
 }
 
-// Send broadcast ´ã´çÇÏ´Â ½º·¹µå
+// Send broadcast ë‹´ë‹¹í•˜ëŠ” ìŠ¤ë ˆë“œ
 unsigned WINAPI SendThread(void *arg) {
 
 	while (true) {
@@ -45,21 +45,21 @@ unsigned WINAPI SendThread(void *arg) {
 }
 
 
-// Server ÄÄÇ»ÅÍ  CPU °³¼ö¸¸Å­ ½º·¹µå »ı¼ºµÉ°Í
-// ³»ºÎ ·ÎÁ÷Àº °¢ ÇÔ¼öº°·Î Ã³¸®
+// Server ì»´í“¨í„°  CPU ê°œìˆ˜ë§Œí¼ ìŠ¤ë ˆë“œ ìƒì„±ë ê²ƒ
+// ë‚´ë¶€ ë¡œì§ì€ ê° í•¨ìˆ˜ë³„ë¡œ ì²˜ë¦¬
 unsigned WINAPI WorkThread(void *arg) {
 
 	while (true) {
 
 		if (!jobQueue.empty()) {
 			EnterCriticalSection(&queueCs);
-			// Å¥ ÅëÃ¤ º¹»ç
+			// í í†µì±„ ë³µì‚¬
 			queue<JOB_DATA> copyJobQueue = jobQueue;
-			queue<JOB_DATA> emptyQueue; // ºó Å¥
-			swap(jobQueue, emptyQueue); // ºó Å¥·Î ¹Ù²ãÄ¡±â
+			queue<JOB_DATA> emptyQueue; // ë¹ˆ í
+			swap(jobQueue, emptyQueue); // ë¹ˆ íë¡œ ë°”ê¿”ì¹˜ê¸°
 			LeaveCriticalSection(&queueCs);
 
-			while (!copyJobQueue.empty()) { // ¿©·¯ ÆĞÅ¶ µ¥ÀÌÅÍ ÇÑ²¨¹ø¿¡ Ã³¸®
+			while (!copyJobQueue.empty()) { // ì—¬ëŸ¬ íŒ¨í‚· ë°ì´í„° í•œêº¼ë²ˆì— ì²˜ë¦¬
 				JOB_DATA jobData = copyJobQueue.front();
 				copyJobQueue.pop();
 
@@ -68,12 +68,12 @@ unsigned WINAPI WorkThread(void *arg) {
 				}
 
 
-				// DataCopy¿¡¼­ ¹ŞÀº ioInfo ¸ğµÎ free
-				if (!businessService->SessionCheck(jobData.socket)) { // ¼¼¼Ç°ª ¾øÀ½ => ·Î±×ÀÎ ÀÌÀü ºĞ±â
-					// ·Î±×ÀÎ ÀÌÀü ·ÎÁ÷ Ã³¸®
-					
-					if (jobData.direction == CALLCOUNT) { // node js ¼­¹ö·Î ÀüÃ¼ ·Î±×ÀÎµÈ À¯Àú¼ö 
-						
+				// DataCopyì—ì„œ ë°›ì€ ioInfo ëª¨ë‘ free
+				if (!businessService->SessionCheck(jobData.socket)) { // ì„¸ì…˜ê°’ ì—†ìŒ => ë¡œê·¸ì¸ ì´ì „ ë¶„ê¸°
+					// ë¡œê·¸ì¸ ì´ì „ ë¡œì§ ì²˜ë¦¬
+
+					if (jobData.direction == CALLCOUNT) { // node js ì„œë²„ë¡œ ì „ì²´ ë¡œê·¸ì¸ëœ ìœ ì €ìˆ˜ 
+
 						int cnt = packetCnt;
 						packetCnt = 0;
 						businessService->CallCnt(jobData.socket, cnt);
@@ -82,54 +82,54 @@ unsigned WINAPI WorkThread(void *arg) {
 						businessService->BanUser(jobData.socket, jobData.msg.substr(0, jobData.nowStatus).c_str());
 					}
 					else if (jobData.direction == EXIT) {
-						// Á¤»óÁ¾·á
+						// ì •ìƒì¢…ë£Œ
 						exit(EXIT_SUCCESS);
 					}
-					else { // °ü¸®ÄÜ¼ÖÀÌ ¾Æ´Ï¶ó Å¬¶óÀÌ¾ğÆ®¿¡¼­ º¸³¾ ¶§
+					else { // ê´€ë¦¬ì½˜ì†”ì´ ì•„ë‹ˆë¼ í´ë¼ì´ì–¸íŠ¸ì—ì„œ ë³´ë‚¼ ë•Œ
 						businessService->StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());
 					}
-					// ¼¼¼Ç°ª ¾øÀ½ => ·Î±×ÀÎ ÀÌÀü ºĞ±â ³¡
+					// ì„¸ì…˜ê°’ ì—†ìŒ => ë¡œê·¸ì¸ ì´ì „ ë¶„ê¸° ë
 				}
-				else { // ¼¼¼Ç°ª ÀÖÀ»¶§ => ´ë±â¹æ ¶Ç´Â Ã¤ÆÃ¹æ »óÅÂ
+				else { // ì„¸ì…˜ê°’ ìˆì„ë•Œ => ëŒ€ê¸°ë°© ë˜ëŠ” ì±„íŒ…ë°© ìƒíƒœ
 
 					int status = businessService->GetStatus(
 						jobData.socket);
-					
-					if (status == STATUS_WAITING && jobData.direction != -1) { // ´ë±â½Ç ÄÉÀÌ½º
-						// ´ë±â½Ç Ã³¸® ÇÔ¼ö
+
+					if (status == STATUS_WAITING && jobData.direction != -1) { // ëŒ€ê¸°ì‹¤ ì¼€ì´ìŠ¤
+						// ëŒ€ê¸°ì‹¤ ì²˜ë¦¬ í•¨ìˆ˜
 						businessService->StatusWait(jobData.socket, status, jobData.direction,
 							jobData.msg.c_str());
 					}
-					else if (status == STATUS_CHATTIG) { // Ã¤ÆÃ Áß ÄÉÀÌ½º
-						// Ã¤ÆÃ¹æ Ã³¸® ÇÔ¼ö
+					else if (status == STATUS_CHATTIG) { // ì±„íŒ… ì¤‘ ì¼€ì´ìŠ¤
+						// ì±„íŒ…ë°© ì²˜ë¦¬ í•¨ìˆ˜
 
-						if (jobData.direction == FILE_SEND) { // ÆÄÀÏ Àü¼Û ÄÉÀÌ½º
+						if (jobData.direction == FILE_SEND) { // íŒŒì¼ ì „ì†¡ ì¼€ì´ìŠ¤
 							businessService->StatusFile(jobData.socket);
 						}
-						else { // ÀÏ¹İ Ã¤ÆÃÀÏ¶§
+						else { // ì¼ë°˜ ì±„íŒ…ì¼ë•Œ
 							businessService->StatusChat(jobData.socket, status, jobData.direction,
 								jobData.msg.c_str());
 						}
-						
+
 					}
 				}
 			}
 		}
-		else {  // µ¿ÀÛ¾ÈÇÒ ‹š ´Ù¸¥ ½º·¹µå°¡ ÀÏÇÒ ¼ö ÀÖ°Ô
+		else {  // ë™ì‘ì•ˆí•  Â‹Âš ë‹¤ë¥¸ ìŠ¤ë ˆë“œê°€ ì¼í•  ìˆ˜ ìˆê²Œ
 			Sleep(1);
 		}
-		
+
 	}
 
 	return 0;
 }
 
-// Server ÄÄÇ»ÅÍ  CPU °³¼ö¸¸Å­ ½º·¹µå »ı¼ºµÉ°Í
-// ³»ºÎ ·ÎÁ÷Àº °¢ ÇÔ¼öº°·Î Ã³¸®
+// Server ì»´í“¨í„°  CPU ê°œìˆ˜ë§Œí¼ ìŠ¤ë ˆë“œ ìƒì„±ë ê²ƒ
+// ë‚´ë¶€ ë¡œì§ì€ ê° í•¨ìˆ˜ë³„ë¡œ ì²˜ë¦¬
 unsigned WINAPI RecvThread(LPVOID pCompPort) {
 
-	// Completion port°´Ã¼
-	HANDLE hComPort = (HANDLE) pCompPort;
+	// Completion portê°ì²´
+	HANDLE hComPort = (HANDLE)pCompPort;
 	SOCKET sock;
 	short bytesTrans;
 	LPPER_IO_DATA ioInfo;
@@ -137,19 +137,20 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 	while (true) {
 
 		bool success = GetQueuedCompletionStatus(hComPort, (LPDWORD)&bytesTrans,
-				(LPDWORD) &sock, (LPOVERLAPPED*) &ioInfo, INFINITE);
-		
-		if (bytesTrans == 0 && !success) { // Á¢¼Ó ²÷±è ÄÜ¼Ö °­Á¦ Á¾·á
-			
+			(LPDWORD)&sock, (LPOVERLAPPED*)&ioInfo, INFINITE);
+
+		if (bytesTrans == 0 && !success) { // ì ‘ì† ëŠê¹€ ì½˜ì†” ê°•ì œ ì¢…ë£Œ
+
 			int errorNum = WSAGetLastError();
 			switch (errorNum)
-			{case ERROR_IO_PENDING: // ´ë±â¿­ÀÌ È¥ÀâÇÑ °æ¿ì
+			{
+			case ERROR_IO_PENDING: // ëŒ€ê¸°ì—´ì´ í˜¼ì¡í•œ ê²½ìš°
 				cout << "ERROR_IO_PENDING " << endl;
 				break;
 			case ERROR_NETNAME_DELETED: // ungraceful close
 				cout << "ERROR_NETNAME_DELETED " << endl;
 				break;
-			case ERROR_SEM_TIMEOUT: // ³×Æ®¿öÅ©´ÜÀıÇö»óÀ¸·Î timeout
+			case ERROR_SEM_TIMEOUT: // ë„¤íŠ¸ì›Œí¬ë‹¨ì ˆí˜„ìƒìœ¼ë¡œ timeout
 				cout << "ERROR_SEM_TIMEOUT " << endl;
 				break;
 			case ERROR_OPERATION_ABORTED: // socket close Event
@@ -159,47 +160,48 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 				cout << "else " << endl;
 				break;
 			}
-			
+
 			businessService->ClientExit(sock);
 			MPool* mp = MPool::getInstance();
 			mp->Free(ioInfo);
-		} else if (businessService->getIocpService()->RECV == ioInfo->serverMode
-			|| businessService->getIocpService()->RECV_MORE == ioInfo->serverMode) { // Recv °¡ ±âº» µ¿ÀÛ
-			// µ¥ÀÌÅÍ ÀĞ±â °úÁ¤
-			short remainByte = min(bytesTrans, BUF_SIZE); // ÃÊ±â Remain Byte
+		}
+		else if (businessService->getIocpService()->RECV == ioInfo->serverMode
+			|| businessService->getIocpService()->RECV_MORE == ioInfo->serverMode) { // Recv ê°€ ê¸°ë³¸ ë™ì‘
+			// ë°ì´í„° ì½ê¸° ê³¼ì •
+			short remainByte = min(bytesTrans, BUF_SIZE); // ì´ˆê¸° Remain Byte
 			bool recvMore = false;
 
-			// jobQueue¿¡ µ¥ÀÌÅÍ¸¦ ÇÑ¹ø¿¡ ´ã±âÀ§ÇÑ ÀÚ·á±¸Á¶
+			// jobQueueì— ë°ì´í„°ë¥¼ í•œë²ˆì— ë‹´ê¸°ìœ„í•œ ìë£Œêµ¬ì¡°
 			queue<JOB_DATA> packetQueue;
 
 			while (true) {
 				remainByte = businessService->PacketReading(ioInfo, remainByte);
-				// ´Ù ¹ŞÀº ÈÄ Á¤»ó ·ÎÁ÷
-				// DataCopy³»¿¡¼­ »ç¿ë ¸Ş¸ğ¸® ÀüºÎ ¹İÈ¯
+				// ë‹¤ ë°›ì€ í›„ ì •ìƒ ë¡œì§
+				// DataCopyë‚´ì—ì„œ ì‚¬ìš© ë©”ëª¨ë¦¬ ì „ë¶€ ë°˜í™˜
 				if (remainByte >= 0) {
 					JOB_DATA jobData;
 					jobData.msg = businessService->DataCopy(ioInfo, &jobData.nowStatus,
 						&jobData.direction);
 					jobData.socket = sock;
 					packetQueue.push(jobData);
-					// packetQueue Ã¤¿ò
+					// packetQueue ì±„ì›€
 				}
-				
+
 				if (remainByte == 0) {
 					MPool* mp = MPool::getInstance();
 					mp->Free(ioInfo);
 					break;
 				}
-				else if (remainByte < 0) { // ¹ŞÀº ÆĞÅ¶ ºÎÁ· || Çì´õ ´Ù ¸ø¹ŞÀ½ -> ´õ¹Ş¾Æ¾ßÇÔ
+				else if (remainByte < 0) { // ë°›ì€ íŒ¨í‚· ë¶€ì¡± || í—¤ë” ë‹¤ ëª»ë°›ìŒ -> ë”ë°›ì•„ì•¼í•¨
 					businessService->getIocpService()->RecvMore(
-						sock, ioInfo); // ÆĞÅ¶ ´õ¹Ş±â & ±âº» ioInfo º¸Á¸
+						sock, ioInfo); // íŒ¨í‚· ë”ë°›ê¸° & ê¸°ë³¸ ioInfo ë³´ì¡´
 
 					recvMore = true;
 					break;
 				}
 			}
 
-			EnterCriticalSection(&queueCs); // jobQueue LockÈ½¼ö¸¦ ÁÙÀÎ´Ù
+			EnterCriticalSection(&queueCs); // jobQueue LockíšŸìˆ˜ë¥¼ ì¤„ì¸ë‹¤
 			packetCnt.fetch_add(packetQueue.size());
 			while (!packetQueue.empty()) { // packetQueue -> jobQueue 
 				JOB_DATA jobData = packetQueue.front();
@@ -207,14 +209,14 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 				jobQueue.push(jobData);
 			}
 			LeaveCriticalSection(&queueCs);
-			// jobQueue¿¡ ÇÑ¹ø¿¡ Insert
-			
-			if (!recvMore) { // recvMoreÀÌ ¾Æ´Ï¸é ÇØ´ç socketÀº ¹Ş±â µ¿ÀÛÀ» °è¼ÓÇÑ´Ù
+			// jobQueueì— í•œë²ˆì— Insert
+
+			if (!recvMore) { // recvMoreì´ ì•„ë‹ˆë©´ í•´ë‹¹ socketì€ ë°›ê¸° ë™ì‘ì„ ê³„ì†í•œë‹¤
 				businessService->getIocpService()->Recv(
-					sock); // ÆĞÅ¶ ´õ¹Ş±â
+					sock); // íŒ¨í‚· ë”ë°›ê¸°
 			}
 		}
-		else if (businessService->getIocpService()->SEND == ioInfo->serverMode) { // Send ³¡³­°æ¿ì
+		else if (businessService->getIocpService()->SEND == ioInfo->serverMode) { // Send ëë‚œê²½ìš°
 
 			CharPool* charPool = CharPool::getInstance();
 
@@ -222,7 +224,8 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 			MPool* mp = MPool::getInstance();
 
 			mp->Free(ioInfo);
-		} else {
+		}
+		else {
 
 			MPool* mp = MPool::getInstance();
 			mp->Free(ioInfo);
@@ -249,18 +252,18 @@ int main(int argc, char* argv[]) {
 		exit(1);
 	}
 
-	// Completion Port »ı¼º
+	// Completion Port ìƒì„±
 	hComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 	GetSystemInfo(&sysInfo);
 
-	// Overlapped IO°¡´É ¼ÒÄÏÀ» ¸¸µç´Ù
-	// TCP Åë½ÅÇÒ°Í
+	// Overlapped IOê°€ëŠ¥ ì†Œì¼“ì„ ë§Œë“ ë‹¤
+	// TCP í†µì‹ í• ê²ƒ
 	hServSock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
 		WSA_FLAG_OVERLAPPED);
 
 	memset(&servAdr, 0, sizeof(servAdr));
 	servAdr.sin_family = PF_INET;
-	servAdr.sin_addr.s_addr = htonl(INADDR_ANY); // INADDR_ANY¶æÀº ¾î´À IP¿¡¼­ Á¢¼ÓÀÌ ¿Íµµ ¿äÃ» ¼ö¶ôÇÑ´Ù´Â ¶æ
+	servAdr.sin_addr.s_addr = htonl(INADDR_ANY); // INADDR_ANYëœ»ì€ ì–´ëŠ IPì—ì„œ ì ‘ì†ì´ ì™€ë„ ìš”ì²­ ìˆ˜ë½í•œë‹¤ëŠ” ëœ»
 	servAdr.sin_port = htons(atoi(SERVER_PORT));
 
 	if (bind(hServSock, (SOCKADDR*)&servAdr, sizeof(servAdr)) == SOCKET_ERROR) {
@@ -269,8 +272,8 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (listen(hServSock, 5) == SOCKET_ERROR) {
-		// listenÀÇ µÎ¹øÂ° ÀÎÀÚ´Â Á¢¼Ó ´ë±â Å¥ÀÇ Å©±â
-		// acceptÀÛ¾÷ ´Ù ³¡³ª±âÀü¿¡ ´ë±â ÇÒ °ø°£
+		// listenì˜ ë‘ë²ˆì§¸ ì¸ìëŠ” ì ‘ì† ëŒ€ê¸° íì˜ í¬ê¸°
+		// acceptì‘ì—… ë‹¤ ëë‚˜ê¸°ì „ì— ëŒ€ê¸° í•  ê³µê°„
 		cout << "listen() error!" << endl;
 		exit(1);
 	}
@@ -280,30 +283,30 @@ int main(int argc, char* argv[]) {
 	int process = sysInfo.dwNumberOfProcessors;
 	cout << "Server CPU num : " << process << endl;
 
-	MPool* mp = MPool::getInstance(); // ¸Ş¸ğ¸®Ç® ÃÊ±âÈ­ ÁöÁ¡
-	CharPool* charPool = CharPool::getInstance(); // ¸Ş¸ğ¸®Ç® ÃÊ±âÈ­ ÁöÁ¡
+	MPool* mp = MPool::getInstance(); // ë©”ëª¨ë¦¬í’€ ì´ˆê¸°í™” ì§€ì 
+	CharPool* charPool = CharPool::getInstance(); // ë©”ëª¨ë¦¬í’€ ì´ˆê¸°í™” ì§€ì 
 
 	InitializeCriticalSectionAndSpinCount(&queueCs, 2000);
-	
+
 	businessService = new BusinessService::BusinessService();
-	
-	// Thread Pool Client¿¡°Ô ÆĞÅ¶ ¹Ş´Â µ¿ÀÛ
+
+	// Thread Pool Clientì—ê²Œ íŒ¨í‚· ë°›ëŠ” ë™ì‘
 	for (int i = 0; i < process; i++) {
-		// ¸¸µé¾îÁø HandleThread¸¦ hComPort CP ¿ÀºêÁ§Æ®¿¡ ÇÒ´çÇÑ´Ù
+		// ë§Œë“¤ì–´ì§„ HandleThreadë¥¼ hComPort CP ì˜¤ë¸Œì íŠ¸ì— í• ë‹¹í•œë‹¤
 		_beginthreadex(NULL, 0, RecvThread, (LPVOID)hComPort, 0, NULL);
 	}
 
-	// Thread Pool ºñÁö´Ï½º ·ÎÁ÷ ´ã´ç
+	// Thread Pool ë¹„ì§€ë‹ˆìŠ¤ ë¡œì§ ë‹´ë‹¹
 	for (int i = 0; i < 2 * process; i++) {
 		_beginthreadex(NULL, 0, WorkThread, NULL, 0, NULL);
 	}
 
-	// Thread Pool ·Î±× ÀúÀå SQL ½ÇÇà¿¡ ¾²ÀÓ
+	// Thread Pool ë¡œê·¸ ì €ì¥ SQL ì‹¤í–‰ì— ì“°ì„
 	for (int i = 0; i < process; i++) {
 		_beginthreadex(NULL, 0, SQLThread, NULL, 0, NULL);
 	}
 
-	// Thread Pool BroadCast ÇØÁÜ
+	// Thread Pool BroadCast í•´ì¤Œ
 	for (int i = 0; i < (process * 5) / 3; i++) {
 		_beginthreadex(NULL, 0, SendThread, NULL, 0, NULL);
 	}
@@ -312,22 +315,22 @@ int main(int argc, char* argv[]) {
 		SOCKET hClientSock;
 		SOCKADDR_IN clntAdr;
 		int addrLen = sizeof(clntAdr);
-		hClientSock = accept(hServSock, (SOCKADDR*) &clntAdr, &addrLen);
-		
+		hClientSock = accept(hServSock, (SOCKADDR*)&clntAdr, &addrLen);
+
 		businessService->InsertLiveSocket(hClientSock, clntAdr);
-	
-		// Completion Port ¿Í acceptÇÑ ¼ÒÄÏ ¿¬°á
-		CreateIoCompletionPort((HANDLE) hClientSock, hComPort,
-				(DWORD) hClientSock, 0);
+
+		// Completion Port ì™€ acceptí•œ ì†Œì¼“ ì—°ê²°
+		CreateIoCompletionPort((HANDLE)hClientSock, hComPort,
+			(DWORD)hClientSock, 0);
 
 		businessService->getIocpService()->Recv(hClientSock);
 
-		// ÃÊ±â Á¢¼Ó ¸Ş¼¼Áö Send
-		string str = "Á¢¼ÓÀ» È¯¿µÇÕ´Ï´Ù!\n";
+		// ì´ˆê¸° ì ‘ì† ë©”ì„¸ì§€ Send
+		string str = "ì ‘ì†ì„ í™˜ì˜í•©ë‹ˆë‹¤!\n";
 		str += loginBeforeMessage;
 
 		businessService->getIocpService()->SendToOneMsg(
-				str.c_str(), hClientSock, STATUS_LOGOUT);
+			str.c_str(), hClientSock, STATUS_LOGOUT);
 	}
 	DeleteCriticalSection(&queueCs);
 

@@ -14,6 +14,7 @@
 #include <string>
 #include <queue>
 #include <direct.h>
+#include <mutex>
 #include "IocpService.h"
 #include "FileService.h"
 #include "Dao.h"
@@ -68,7 +69,7 @@ private:
 	// roomMap 동기화
 	CRITICAL_SECTION roomCs;
 	// sqlQueue 동기화
-	CRITICAL_SECTION sqlCs;
+	mutex sqlCs;
 	// sendQueue 동기화
 	CRITICAL_SECTION sendCs;
 
@@ -76,12 +77,14 @@ private:
 	// UDP 전송 Case때문에 각 클라이언트 socket의 IP도 저장한다
 	unordered_map<SOCKET, string> liveSocket;
 
-	CRITICAL_SECTION liveSocketCs;
+	mutex liveSocketCs;
 
 	IocpService::IocpService *iocpService;
 
 	FileService::FileService *fileService;
 
+	BusinessService(const BusinessService& rhs) = delete;
+	void operator=(const BusinessService& rhs) = delete;
 public:
 	// 생성자
 	BusinessService();

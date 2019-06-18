@@ -20,6 +20,8 @@ private:
 	Concurrency::concurrent_queue<char*> poolQueue;
 	MPool();
 	~MPool();
+	MPool(const MPool& mpool) = delete;
+	void operator=(const MPool& mpool) = delete;
 	static MPool* instance; // Singleton Instance
 public:
 	// Singleton Instance ¸¦ ¹ÝÈ¯

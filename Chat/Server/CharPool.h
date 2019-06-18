@@ -22,6 +22,8 @@ private:
 	DWORD len;
 	CharPool();
 	~CharPool();
+	CharPool(const CharPool& pool);
+	CharPool& operator=(const CharPool& pool);
 	static CharPool* instance; // Singleton Instance
 public:
 	// Singleton Instance ¸¦ ¹ÝÈ¯
