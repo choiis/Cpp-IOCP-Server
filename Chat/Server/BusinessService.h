@@ -95,7 +95,7 @@ public:
 	// SendThread에서 동작할 부분
 	void Sendwork();
 	// InsertSendQueue 공통화
-	void InsertSendQueue(int direction, const string& msg, const string& roomName, SOCKET socket, int status);
+	void InsertSendQueue(SendTo direction, const string& msg, const string& roomName, SOCKET socket, ClientStatus status);
 	// 초기 로그인
 	// 세션정보 추가
 	void InitUser(const char *id, SOCKET sock ,const char *nickName);
@@ -121,7 +121,7 @@ public:
 	// 클라이언트의 상태정보 반환
 	int GetStatus(SOCKET sock);
 	// 친구추가 기능
-	void AddFriend(SOCKET sock, const string& msg, const string& id, int status);
+	void AddFriend(SOCKET sock, const string& msg, const string& id, ClientStatus status);
 	// 연결중 socket Insert
 	void InsertLiveSocket(const SOCKET& hClientSock, const SOCKADDR_IN& addr);
 	// socket 죽었는지 확인

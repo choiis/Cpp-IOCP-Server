@@ -16,7 +16,7 @@ IocpService::IocpService() {
 IocpService::~IocpService() {
 }
 // 한명에게 메세지 전달
-void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, int status) {
+void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, ClientStatus status) {
 	MPool* mp = MPool::getInstance();
 	LPPER_IO_DATA ioInfo = mp->Malloc();
 
@@ -40,7 +40,7 @@ void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, int status) {
 }
 // 같은 방의 사람들에게 메세지 전달
 void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
-		int status) {
+	ClientStatus status) {
 	MPool* mp = MPool::getInstance();
 	CharPool* charPool = CharPool::getInstance();
 

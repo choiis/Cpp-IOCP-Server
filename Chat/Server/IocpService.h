@@ -32,9 +32,9 @@ public:
 	virtual ~IocpService();
 
 	// 한명에게 메세지 전달
-	void SendToOneMsg(const char *msg, SOCKET mySock, int status);
+	void SendToOneMsg(const char *msg, SOCKET mySock, ClientStatus status);
 	// 같은 방의 사람들에게 메세지 전달
-	void SendToRoomMsg(const char *msg, const list<SOCKET> &lists, int status);
+	void SendToRoomMsg(const char *msg, const list<SOCKET> &lists, ClientStatus status);
 	// Recv 계속 공통함수
 	void RecvMore(SOCKET sock, LPPER_IO_DATA ioInfo);
 

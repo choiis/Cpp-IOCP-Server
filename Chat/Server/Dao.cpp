@@ -19,12 +19,14 @@ Dao::Dao() {
 
 	// DB connection
 	res = SQLDriverConnect(hDbc, NULL,
-		(SQLCHAR*)"DRIVER={SQL Server};SERVER=10.10.55.62, 1433; DATABASE=server_DB; UID=23460; PWD=qw1324..;",
+		(SQLCHAR*)"DRIVER={SQL Server};SERVER=10.10.55.93, 1433; DATABASE=server_DB; UID=23460; PWD=as1324..;",
 		SQL_NTS, NULL, 1024, NULL, SQL_DRIVER_NOPROMPT); //접속 조건 입력. (성공 = 1, 실패 = -1 리턴)
 	if (res == 1) {
-		std::cout << "DB connection 성공" << std::endl;
+		std::cout << "DB connection success" << std::endl;
 	}
-
+	else {
+		std::cout << "DB connection fail" << std::endl;
+	}
 }
 
 Dao::~Dao() {

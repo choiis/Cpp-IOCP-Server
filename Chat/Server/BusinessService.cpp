@@ -98,10 +98,10 @@ namespace BusinessService {
 			LeaveCriticalSection(&sendCs);
 			switch (sendData.direction)
 			{
-			case SEND_ME: // Send to One
+			case SendTo::SEND_ME: // Send to One
 				iocpService->SendToOneMsg(sendData.msg.c_str(), sendData.mySocket, sendData.status);
 				break;
-			case SEND_ROOM: // Send to Room
+			case SendTo::SEND_ROOM: // Send to Room
 				// LockCount가 있을 때 => 방 리스트가 살아있을 때
 			{
 				EnterCriticalSection(&roomCs);
@@ -119,7 +119,7 @@ namespace BusinessService {
 				}
 				break;
 			}
-			case SEND_FILE:
+			case SendTo::SEND_FILE:
 			{
 				string dir = sendData.msg;
 
@@ -166,17 +166,17 @@ namespace BusinessService {
 	}
 
 	// InsertSendQueue 공통화
-	void BusinessService::InsertSendQueue(int direction, const string& msg, const string& roomName, SOCKET socket, int status) {
+	void BusinessService::InsertSendQueue(SendTo direction, const string& msg, const string& roomName, SOCKET socket, ClientStatus status) {
 
 		// SendQueue에 Insert
 		Send_DATA sendData;
-		if (direction == SEND_ME) {
+		if (direction == SendTo::SEND_ME) {
 			sendData.direction = direction;
 			sendData.msg = msg;
 			sendData.mySocket = socket;
 			sendData.status = status;
 		}
-		else { //  SEND_ROOM
+		else { //  SendTo::SEND_ROOM
 			sendData.direction = direction;
 			sendData.msg = msg;
 			sendData.roomName = roomName;
@@ -195,7 +195,7 @@ namespace BusinessService {
 
 		PER_HANDLE_DATA userInfo;
 		// 유저의 상태 정보 초기화
-		userInfo.status = STATUS_WAITING;
+		userInfo.status = ClientStatus::STATUS_WAITING;
 
 		strncpy(userInfo.userId, id, NAME_SIZE);
 		strncpy(userInfo.roomName, "", NAME_SIZE);
@@ -226,7 +226,7 @@ namespace BusinessService {
 		msg = nickName;
 		msg.append("님 입장을 환영합니다!\n");
 		msg.append(waitRoomMessage);
-		InsertSendQueue(SEND_ME, msg, "", sock, STATUS_WAITING);
+		InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
 	}
 
 	// 접속 강제종료 로직
@@ -259,7 +259,7 @@ namespace BusinessService {
 				LeaveCriticalSection(&idCs);
 
 				// 방이름 임시 저장
-				if (userMap.find(sock)->second.status == STATUS_CHATTIG) { // 방에 접속중인 경우
+				if (userMap.find(sock)->second.status == ClientStatus::STATUS_CHATTIG) { // 방에 접속중인 경우
 					string sendMsg;
 					string roomName;
 					sendMsg = name;
@@ -271,7 +271,7 @@ namespace BusinessService {
 					// 개별 퇴장시에는 Room List 개별 Lock만
 					EnterCriticalSection(&roomMap.find(roomName)->second->listCs);
 					// 나갈때는 즉시 BoardCast
-					iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, STATUS_CHATTIG);
+					iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
 
 					roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
 					LeaveCriticalSection(&roomMap.find(roomName)->second->listCs);
@@ -280,7 +280,7 @@ namespace BusinessService {
 
 					EnterCriticalSection(&userCs); // 로그인된 사용자정보 변경 Lock
 					strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
-					userMap.find(sock)->second.status = STATUS_WAITING; // 상태 변경
+					userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // 상태 변경
 					LeaveCriticalSection(&userCs);
 
 					// room Lock은 방 완전 삭제시 에만
@@ -309,7 +309,7 @@ namespace BusinessService {
 
 		string msg = "";
 
-		if (direction == USER_MAKE) { // 1번 계정생성
+		if (direction == Direction::USER_MAKE) { // 1번 계정생성
 
 			char *sArr[3] = { NULL, };
 			char message2[BUF_SIZE];
@@ -341,7 +341,7 @@ namespace BusinessService {
 					msg.append("계정 생성 완료!\n");
 					msg.append(loginBeforeMessage);
 
-					InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
+					InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
 
 				}
 				else { // ID중복있음
@@ -349,12 +349,12 @@ namespace BusinessService {
 					msg.append("중복된 아이디가 있습니다!\n");
 					msg.append(loginBeforeMessage);
 
-					InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
+					InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
 				}
 			}
 
 		}
-		else if (direction == USER_ENTER) { // 2번 로그인 시도
+		else if (direction == Direction::USER_ENTER) { // 2번 로그인 시도
 
 			char *sArr[2] = { NULL, };
 			char message2[BUF_SIZE];
@@ -379,7 +379,7 @@ namespace BusinessService {
 					msg.append(loginBeforeMessage);
 
 					// SendQueue에 Insert
-					InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
+					InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
 
 				}
 				else if (strcmp(vo.getPassword(), sArr[1]) == 0) { // 비밀번호 일치
@@ -391,7 +391,7 @@ namespace BusinessService {
 						msg.append(loginBeforeMessage);
 
 						// SendQueue에 Insert
-						InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
+						InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
 
 					}
 					else { // 중복로그인 X
@@ -405,7 +405,7 @@ namespace BusinessService {
 					msg.append("비밀번호 틀림!\n");
 					msg.append(loginBeforeMessage);
 
-					InsertSendQueue(SEND_ME, msg, "", sock, STATUS_LOGOUT);
+					InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
 				}
 			}
 
@@ -413,7 +413,7 @@ namespace BusinessService {
 		else { // 그외 명령어 입력
 			string sendMsg = errorMessage;
 			sendMsg += loginBeforeMessage;
-			InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_LOGOUT);
+			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_LOGOUT);
 		}
 
 	}
@@ -427,7 +427,7 @@ namespace BusinessService {
 		string id = userMap.find(sock)->second.userId;
 		string msg = string(message);
 		// 세션에서 이름 정보 리턴
-		if (direction == ROOM_MAKE) { // 새로운 방 만들때
+		if (direction == Direction::ROOM_MAKE) { // 새로운 방 만들때
 
 			// 유효성 검증 먼저
 			EnterCriticalSection(&roomCs);
@@ -437,7 +437,7 @@ namespace BusinessService {
 				LeaveCriticalSection(&roomCs);
 				msg += "이미 있는 방 이름입니다!\n";
 				msg += waitRoomMessage;
-				InsertSendQueue(SEND_ME, msg, "", sock, STATUS_WAITING);
+				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
 				// 중복 케이스는 방 만들 수 없음
 			}
 			else { // 방이름 중복 아닐 때만 개설
@@ -457,18 +457,18 @@ namespace BusinessService {
 				strncpy((userMap.find(sock))->second.roomName, msg.c_str(),
 					NAME_SIZE);
 				(userMap.find(sock))->second.status =
-					STATUS_CHATTIG;
+					ClientStatus::STATUS_CHATTIG;
 				LeaveCriticalSection(&userCs);
 
 				msg += " 방이 개설되었습니다.";
 				msg += chatRoomMessage;
 				// cout << "현재 서버의 방 갯수 : " << roomMap.size() << endl;
-				InsertSendQueue(SEND_ME, msg, "", sock, STATUS_CHATTIG);
+				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_CHATTIG);
 
 			}
 
 		}
-		else if (direction == ROOM_ENTER) { // 방 입장 요청
+		else if (direction == Direction::ROOM_ENTER) { // 방 입장 요청
 
 			// 유효성 검증 먼저
 			EnterCriticalSection(&roomCs);
@@ -478,7 +478,7 @@ namespace BusinessService {
 				msg = "없는 방 입니다!\n";
 				msg += waitRoomMessage;
 
-				InsertSendQueue(SEND_ME, msg, "", sock, STATUS_WAITING);
+				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
 
 			}
 			else {
@@ -494,7 +494,7 @@ namespace BusinessService {
 					EnterCriticalSection(&userCs);
 					strncpy(userMap.find(sock)->second.roomName, msg.c_str(),
 						NAME_SIZE); // 로그인 유저 정보 변경
-					userMap.find(sock)->second.status = STATUS_CHATTIG;
+					userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
 					LeaveCriticalSection(&userCs);
 					EnterCriticalSection(&roomMap.find(msg)->second->listCs); // 방의 Lock
 					//방이 있으니까 유저를 insert
@@ -505,11 +505,11 @@ namespace BusinessService {
 					sendMsg += " 님이 입장하셨습니다. ";
 					sendMsg += chatRoomMessage;
 
-					InsertSendQueue(SEND_ROOM, sendMsg, msg, 0, STATUS_CHATTIG);
+					InsertSendQueue(SendTo::SEND_ROOM, sendMsg, msg, 0, ClientStatus::STATUS_CHATTIG);
 				}
 			}
 		}
-		else if (direction == ROOM_INFO) { // 방 정보 요청시
+		else if (direction == Direction::ROOM_INFO) { // 방 정보 요청시
 
 			string str;
 			if (roomMap.size() == 0) {
@@ -535,10 +535,10 @@ namespace BusinessService {
 
 			}
 
-			InsertSendQueue(SEND_ME, str, "", sock, STATUS_WAITING);
+			InsertSendQueue(SendTo::SEND_ME, str, "", sock, ClientStatus::STATUS_WAITING);
 
 		}
-		else if (direction == ROOM_USER_INFO) { // 유저 정보 요청시
+		else if (direction == Direction::ROOM_USER_INFO) { // 유저 정보 요청시
 			string str = "유저 정보 리스트";
 
 			EnterCriticalSection(&userCs);
@@ -553,17 +553,17 @@ namespace BusinessService {
 				str += "\n";
 				str += (iter->second).userName;
 				str += ":";
-				if ((iter->second).status == STATUS_WAITING) {
+				if ((iter->second).status == ClientStatus::STATUS_WAITING) {
 					str += "대기실";
 				}
 				else {
 					str += (iter->second).roomName;
 				}
 			}
-			InsertSendQueue(SEND_ME, str, "", sock, STATUS_WAITING);
+			InsertSendQueue(SendTo::SEND_ME, str, "", sock, ClientStatus::STATUS_WAITING);
 
 		}
-		else if (direction == FRIEND_INFO) { // 친구 정보 요청
+		else if (direction == Direction::FRIEND_INFO) { // 친구 정보 요청
 			
 			Vo vo;
 			vo.setUserId(id.c_str());
@@ -572,7 +572,7 @@ namespace BusinessService {
 			string sendMsg ="친구 정보 리스트";
 			if (vec.size() == 0) {
 				sendMsg.append("\n등록된 친구가 없습니다");
-				InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 			}
 			else {
 				EnterCriticalSection(&userCs);
@@ -609,14 +609,14 @@ namespace BusinessService {
 					}
 
 				}
-				InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 			}
 			
 		}
-		else if (direction == FRIEND_ADD) { // 친구 추가
-			AddFriend(sock, msg, id , STATUS_WAITING);
+		else if (direction == Direction::FRIEND_ADD) { // 친구 추가
+			AddFriend(sock, msg, id , ClientStatus::STATUS_WAITING);
 		}
-		else if (direction == FRIEND_GO) { // 친구가 있는 방으로
+		else if (direction == Direction::FRIEND_GO) { // 친구가 있는 방으로
 			Vo vo;
 			vo.setUserId(id.c_str());
 			vo.setRelationto(msg.c_str());
@@ -626,7 +626,7 @@ namespace BusinessService {
 			if (strcmp(vo2.getNickName(), "") == 0) { // 친구정보 못찾음
 				string sendMsg = "친구정보를 찾을 수 없습니다\n";
 				sendMsg += waitRoomMessage;
-				InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 			}
 			else {
 				EnterCriticalSection(&userCs);
@@ -643,7 +643,7 @@ namespace BusinessService {
 							string sendMsg = string(message);
 							sendMsg += " 님은 대기실에 있습니다";
 
-							InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+							InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 							exist = true;
 							break;
 						}
@@ -661,7 +661,7 @@ namespace BusinessService {
 								EnterCriticalSection(&userCs);
 								strncpy(userMap.find(sock)->second.roomName, roomName.c_str(),
 									NAME_SIZE); // 로그인 유저 정보 변경
-								userMap.find(sock)->second.status = STATUS_CHATTIG;
+								userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
 								string nick = userMap.find(sock)->second.userName;
 								LeaveCriticalSection(&userCs);
 								EnterCriticalSection(&roomMap.find(roomName)->second->listCs); // 방의 Lock
@@ -674,7 +674,7 @@ namespace BusinessService {
 								sendMsg += " 님이 입장하셨습니다. ";
 								sendMsg += chatRoomMessage;
 
-								InsertSendQueue(SEND_ROOM, sendMsg, roomName, 0, STATUS_CHATTIG);
+								InsertSendQueue(SendTo::SEND_ROOM, sendMsg, roomName, 0, ClientStatus::STATUS_CHATTIG);
 							}
 
 							exist = true;
@@ -687,11 +687,11 @@ namespace BusinessService {
 					string sendMsg = string(message);
 					sendMsg += " 님은 접속중이 아닙니다";
 
-					InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+					InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 				}
 			}
 		}
-		else if (direction == FRIEND_DELETE) { // 친구 삭제
+		else if (direction == Direction::FRIEND_DELETE) { // 친구 삭제
 
 			Vo vo;
 			vo.setUserId(id.c_str());
@@ -703,16 +703,16 @@ namespace BusinessService {
 				string sendMsg = msg;
 				sendMsg += " 님을 친구 삭제했습니다";
 
-				InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 			}
 			else { // 삭제실패
 				string sendMsg = "친구 삭제실패\n";
 				sendMsg.append(waitRoomMessage);
 
-				InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 			}
 		}
-		else if (direction == WHISPER) { // 귓속말
+		else if (direction == Direction::WHISPER) { // 귓속말
 
 			char *sArr[2] = { NULL, };
 			char message2[BUF_SIZE];
@@ -735,7 +735,7 @@ namespace BusinessService {
 					sendMsg = "자신에게 쪽지를 보낼수 없습니다\n";
 					sendMsg += waitRoomMessage;
 
-					InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+					InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 
 				}
 				else {
@@ -753,7 +753,7 @@ namespace BusinessService {
 							sendMsg += " 님에게 온 귓속말 : ";
 							sendMsg += msg;
 
-							InsertSendQueue(SEND_ME, sendMsg, "", iter->first, STATUS_WHISPER);
+							InsertSendQueue(SendTo::SEND_ME, sendMsg, "", iter->first, ClientStatus::STATUS_WHISPER);
 
 							break;
 						}
@@ -764,13 +764,13 @@ namespace BusinessService {
 						sendMsg = name;
 						sendMsg += " 님을 찾을 수 없습니다";
 
-						InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+						InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 					}
 				}
 			}
 
 		}
-		else if (direction == LOG_OUT) { // 로그아웃
+		else if (direction == Direction::LOG_OUT) { // 로그아웃
 			char id[NAME_SIZE];
 			EnterCriticalSection(&idCs);
 			strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
@@ -783,14 +783,14 @@ namespace BusinessService {
 			LeaveCriticalSection(&userCs);
 
 			string sendMsg = loginBeforeMessage;
-			InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_LOGOUT);
+			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_LOGOUT);
 		}
 		else { // 그외 명령어 입력
 			string sendMsg = errorMessage;
 			sendMsg += waitRoomMessage;
-			// 대기방의 오류이므로 STATUS_WAITING 상태로 전달한다
+			// 대기방의 오류이므로 ClientStatus::STATUS_WAITING 상태로 전달한다
 
-			InsertSendQueue(SEND_ME, sendMsg, "", sock, STATUS_WAITING);
+			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 		}
 
 		Vo vo; // DB SQL문에 필요한 Data
@@ -835,18 +835,18 @@ namespace BusinessService {
 			// 개별 퇴장시에는 Room List 개별 Lock만
 			EnterCriticalSection(&roomMap.find(roomName)->second->listCs);
 			// 나갈때는 즉시 BoardCast
-			iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, STATUS_CHATTIG);
+			iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
 
 			roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
 			LeaveCriticalSection(&roomMap.find(roomName)->second->listCs);
 			// Room List 개별 Lock만
 
 			msg = waitRoomMessage;
-			InsertSendQueue(SEND_ME, msg, "", sock, STATUS_WAITING);
+			InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
 
 			EnterCriticalSection(&userCs); // 로그인된 사용자정보 변경 Lock
 			strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
-			userMap.find(sock)->second.status = STATUS_WAITING; // 상태 변경
+			userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // 상태 변경
 			LeaveCriticalSection(&userCs);
 
 			// room Lock은 방 완전 삭제시 에만
@@ -863,7 +863,7 @@ namespace BusinessService {
 		
 			msg.erase(0, 5); // 친구 이름 반환
 			// 친구추가
-			AddFriend(sock, msg , id , STATUS_CHATTIG);
+			AddFriend(sock, msg , id , ClientStatus::STATUS_CHATTIG);
 		}
 		else { // 채팅방에서 채팅중
 
@@ -881,7 +881,7 @@ namespace BusinessService {
 			LeaveCriticalSection(&userCs);
 
 			if (it != roomMap.end()) { // null 검사
-				InsertSendQueue(SEND_ROOM, sendMsg, userMap.find(sock)->second.roomName, 0, STATUS_CHATTIG);
+				InsertSendQueue(SendTo::SEND_ROOM, sendMsg, userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_CHATTIG);
 			}
 
 			Vo vo; // DB SQL문에 필요한 Data
@@ -907,9 +907,9 @@ namespace BusinessService {
 		
 		string fileDir = fileService->RecvFile(sock);
 		// SendQueue에 Insert
-		InsertSendQueue(SEND_ROOM, "", userMap.find(sock)->second.roomName, 0, STATUS_FILE_SEND);
+		InsertSendQueue(SendTo::SEND_ROOM, "", userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
 		// 여기서부터 UDP BroadCast
-		InsertSendQueue(SEND_FILE, fileDir.c_str(), userMap.find(sock)->second.roomName, 0, STATUS_FILE_SEND);
+		InsertSendQueue(SendTo::SEND_FILE, fileDir.c_str(), userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
 
 	}
 
@@ -1039,7 +1039,7 @@ namespace BusinessService {
 	}
 
 	// 친구추가 기능
-	void BusinessService::AddFriend(SOCKET sock, const string& msg, const string& id, int status) {
+	void BusinessService::AddFriend(SOCKET sock, const string& msg, const string& id, ClientStatus status) {
 		Vo vo;
 		vo.setNickName(msg.c_str());
 		Vo vo2 = dao->findUserId(vo); // 아이디 존재 여부 검색
@@ -1048,7 +1048,7 @@ namespace BusinessService {
 
 		if (strcmp(vo2.getRelationto(), "") == 0) {
 			sendMsg = "아이디 없음 친추 불가능";
-			InsertSendQueue(SEND_ME, sendMsg, "", sock, status);
+			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, status);
 		}
 		else {
 
@@ -1058,12 +1058,12 @@ namespace BusinessService {
 			if (res != -1) { // 친추 성공
 				sendMsg = msg;
 				sendMsg.append("님이 친구추가 되었습니다");
-				InsertSendQueue(SEND_ME, sendMsg, "", sock, status);
+				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, status);
 			}
 			else {
 				sendMsg = msg;
 				sendMsg.append("님이 친구추가 실패");
-				InsertSendQueue(SEND_ME, sendMsg, "", sock, status);
+				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, status);
 			}
 		}
 	}
@@ -1107,7 +1107,7 @@ namespace BusinessService {
 				LeaveCriticalSection(&idCs);
 
 				// 방이름 임시 저장
-				if (userMap.find(sock)->second.status == STATUS_CHATTIG) { // 방에 접속중인 경우
+				if (userMap.find(sock)->second.status == ClientStatus::STATUS_CHATTIG) { // 방에 접속중인 경우
 					string sendMsg;
 					string roomName;
 					sendMsg = name;
@@ -1119,7 +1119,7 @@ namespace BusinessService {
 					// 개별 퇴장시에는 Room List 개별 Lock만
 					EnterCriticalSection(&roomMap.find(roomName)->second->listCs);
 					// 나갈때는 즉시 BoardCast
-					iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, STATUS_CHATTIG);
+					iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
 
 					roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
 					LeaveCriticalSection(&roomMap.find(roomName)->second->listCs);
@@ -1128,7 +1128,7 @@ namespace BusinessService {
 
 					EnterCriticalSection(&userCs); // 로그인된 사용자정보 변경 Lock
 					strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
-					userMap.find(sock)->second.status = STATUS_WAITING; // 상태 변경
+					userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // 상태 변경
 					LeaveCriticalSection(&userCs);
 
 					// room Lock은 방 완전 삭제시 에만
@@ -1142,7 +1142,7 @@ namespace BusinessService {
 					LeaveCriticalSection(&roomCs);
 				}
 				string str = "당신은 관리자에의해 강퇴되었습니다";
-				InsertSendQueue(SEND_ME, str.c_str(), "", sock, STATUS_LOGOUT);
+				InsertSendQueue(SendTo::SEND_ME, str.c_str(), "", sock, ClientStatus::STATUS_LOGOUT);
 
 				EnterCriticalSection(&userCs);
 				userMap.erase(sock); // 접속 소켓 정보 삭제
@@ -1157,7 +1157,7 @@ namespace BusinessService {
 	void BusinessService::CallCnt(SOCKET socket, const DWORD& cnt) {
 		char msg[30];
 		sprintf(msg, "{\"packet\":%d , \"cnt\":%d}", cnt, userMap.size());
-		InsertSendQueue(SEND_ME, msg, "", socket, 0);
+		InsertSendQueue(SendTo::SEND_ME, msg, "", socket, ClientStatus::STATUS_INIT);
 	}
 
 	IocpService::IocpService* BusinessService::getIocpService() {

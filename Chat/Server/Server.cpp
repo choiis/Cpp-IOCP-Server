@@ -11,6 +11,7 @@
 #include <process.h>
 #include <direct.h>
 #include <atomic>
+#include "Socket.h"
 #include "BusinessService.h"
 
 using namespace std;
@@ -21,7 +22,7 @@ BusinessService::BusinessService *businessService;
 // Recv가 Work에게 전달
 queue<JOB_DATA> jobQueue;
 
-CRITICAL_SECTION queueCs;
+mutex queueCs;
 
 atomic<int> packetCnt = 0;
 
@@ -52,13 +53,16 @@ unsigned WINAPI WorkThread(void *arg) {
 	while (true) {
 
 		if (!jobQueue.empty()) {
-			EnterCriticalSection(&queueCs);
-			// 큐 통채 복사
-			queue<JOB_DATA> copyJobQueue = jobQueue;
-			queue<JOB_DATA> emptyQueue; // 빈 큐
-			swap(jobQueue, emptyQueue); // 빈 큐로 바꿔치기
-			LeaveCriticalSection(&queueCs);
 
+			queue<JOB_DATA> copyJobQueue;
+			{
+				lock_guard<mutex> guard(queueCs);  // Lock최소화
+				// 큐 통채 복사
+				copyJobQueue = jobQueue;
+				queue<JOB_DATA> emptyQueue; // 빈 큐
+				swap(jobQueue, emptyQueue); // 빈 큐로 바꿔치기
+			}
+			
 			while (!copyJobQueue.empty()) { // 여러 패킷 데이터 한꺼번에 처리
 				JOB_DATA jobData = copyJobQueue.front();
 				copyJobQueue.pop();
@@ -72,16 +76,16 @@ unsigned WINAPI WorkThread(void *arg) {
 				if (!businessService->SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
 					// 로그인 이전 로직 처리
 
-					if (jobData.direction == CALLCOUNT) { // node js 서버로 전체 로그인된 유저수 
+					if (jobData.direction == Direction::CALLCOUNT) { // node js 서버로 전체 로그인된 유저수 
 
 						int cnt = packetCnt;
 						packetCnt = 0;
 						businessService->CallCnt(jobData.socket, cnt);
 					}
-					else if (jobData.direction == BAN) {
+					else if (jobData.direction == Direction::BAN) {
 						businessService->BanUser(jobData.socket, jobData.msg.substr(0, jobData.nowStatus).c_str());
 					}
-					else if (jobData.direction == EXIT) {
+					else if (jobData.direction == Direction::EXIT) {
 						// 정상종료
 						exit(EXIT_SUCCESS);
 					}
@@ -95,15 +99,15 @@ unsigned WINAPI WorkThread(void *arg) {
 					int status = businessService->GetStatus(
 						jobData.socket);
 
-					if (status == STATUS_WAITING && jobData.direction != -1) { // 대기실 케이스
+					if (status == ClientStatus::STATUS_WAITING && jobData.direction != -1) { // 대기실 케이스
 						// 대기실 처리 함수
 						businessService->StatusWait(jobData.socket, status, jobData.direction,
 							jobData.msg.c_str());
 					}
-					else if (status == STATUS_CHATTIG) { // 채팅 중 케이스
+					else if (status == ClientStatus::STATUS_CHATTIG) { // 채팅 중 케이스
 						// 채팅방 처리 함수
 
-						if (jobData.direction == FILE_SEND) { // 파일 전송 케이스
+						if (jobData.direction == Direction::FILE_SEND) { // 파일 전송 케이스
 							businessService->StatusFile(jobData.socket);
 						}
 						else { // 일반 채팅일때
@@ -201,14 +205,15 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 				}
 			}
 
-			EnterCriticalSection(&queueCs); // jobQueue Lock횟수를 줄인다
-			packetCnt.fetch_add(packetQueue.size());
-			while (!packetQueue.empty()) { // packetQueue -> jobQueue 
-				JOB_DATA jobData = packetQueue.front();
-				packetQueue.pop();
-				jobQueue.push(jobData);
+			{
+				lock_guard<mutex> guard(queueCs);
+				packetCnt.fetch_add(packetQueue.size());
+				while (!packetQueue.empty()) { // packetQueue -> jobQueue 
+					JOB_DATA jobData = packetQueue.front();
+					packetQueue.pop();
+					jobQueue.push(jobData);
+				}
 			}
-			LeaveCriticalSection(&queueCs);
 			// jobQueue에 한번에 Insert
 
 			if (!recvMore) { // recvMore이 아니면 해당 socket은 받기 동작을 계속한다
@@ -237,46 +242,20 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 
 int main(int argc, char* argv[]) {
 
-	WSADATA wsaData;
 	HANDLE hComPort;
 	SYSTEM_INFO sysInfo;
 
-	SOCKET hServSock;
-	SOCKADDR_IN servAdr;
+	Socket socket;
+	
+	SOCKET hServSock = socket.getSocket();
 
 	SetConsoleTextAttribute(
 		GetStdHandle(STD_OUTPUT_HANDLE), 10);
-
-	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-		cout << "WSAStartup() error!" << endl;
-		exit(1);
-	}
 
 	// Completion Port 생성
 	hComPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 	GetSystemInfo(&sysInfo);
 
-	// Overlapped IO가능 소켓을 만든다
-	// TCP 통신할것
-	hServSock = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0,
-		WSA_FLAG_OVERLAPPED);
-
-	memset(&servAdr, 0, sizeof(servAdr));
-	servAdr.sin_family = PF_INET;
-	servAdr.sin_addr.s_addr = htonl(INADDR_ANY); // INADDR_ANY뜻은 어느 IP에서 접속이 와도 요청 수락한다는 뜻
-	servAdr.sin_port = htons(atoi(SERVER_PORT));
-
-	if (bind(hServSock, (SOCKADDR*)&servAdr, sizeof(servAdr)) == SOCKET_ERROR) {
-		cout << "bind() error!" << endl;
-		exit(1);
-	}
-
-	if (listen(hServSock, 5) == SOCKET_ERROR) {
-		// listen의 두번째 인자는 접속 대기 큐의 크기
-		// accept작업 다 끝나기전에 대기 할 공간
-		cout << "listen() error!" << endl;
-		exit(1);
-	}
 	cout << "Server ready listen" << endl;
 	cout << "port number : " << SERVER_PORT << endl;
 
@@ -285,8 +264,6 @@ int main(int argc, char* argv[]) {
 
 	MPool* mp = MPool::getInstance(); // 메모리풀 초기화 지점
 	CharPool* charPool = CharPool::getInstance(); // 메모리풀 초기화 지점
-
-	InitializeCriticalSectionAndSpinCount(&queueCs, 2000);
 
 	businessService = new BusinessService::BusinessService();
 
@@ -330,10 +307,9 @@ int main(int argc, char* argv[]) {
 		str += loginBeforeMessage;
 
 		businessService->getIocpService()->SendToOneMsg(
-			str.c_str(), hClientSock, STATUS_LOGOUT);
+			str.c_str(), hClientSock, ClientStatus::STATUS_LOGOUT);
 	}
-	DeleteCriticalSection(&queueCs);
-
+	
 	delete businessService;
 
 	return 0;
