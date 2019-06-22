@@ -15,6 +15,7 @@
 #include <sqlext.h>
 #include <string>
 #include <vector>
+#include <mutex>
 #include "Vo.h"
 
 using namespace std;
@@ -28,7 +29,7 @@ private:
 	SQLHSTMT hStmt;
 	SQLRETURN res;
 	// idMap µø±‚»≠
-	CRITICAL_SECTION cs;
+	mutex lock;
 
 public:
 	Dao();

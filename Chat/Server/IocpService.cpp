@@ -44,9 +44,7 @@ void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
 	MPool* mp = MPool::getInstance();
 	CharPool* charPool = CharPool::getInstance();
 
-	list<SOCKET>::const_iterator iter; // 변경 불가능 객체를 가리키는 반복자
-
-	for (iter = lists.begin(); iter != lists.end(); iter++) {
+	for_each(lists.begin(), lists.end(), [&] (SOCKET socket) {
 		// ioInfo를 각개 만들어서 보내자
 		LPPER_IO_DATA ioInfo = mp->Malloc();
 
@@ -65,9 +63,10 @@ void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
 		ioInfo->serverMode = Operation::SEND;
 		ioInfo->recvByte = 0;
 
-		WSASend((*iter), &(ioInfo->wsaBuf), 1,
+		WSASend(socket, &(ioInfo->wsaBuf), 1,
 			NULL, 0, &(ioInfo->overlapped), NULL);
-	}
+	
+	});
 }
 
 // Recv 계속 공통함수

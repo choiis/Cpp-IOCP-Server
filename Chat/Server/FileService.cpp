@@ -38,14 +38,13 @@ namespace FileService {
 	void FileService::SendToRoomFile(FILE* fp, const string& dir, shared_ptr<ROOM_DATA> second, const unordered_map<SOCKET, string>& liveSocket) {
 		
 		list<SOCKET> userList = second->userList;
-		list<SOCKET>::const_iterator itr; // 변경 불가능 객체를 가리키는 반복자
 
-		for (itr = userList.begin(); itr != userList.end(); itr++) {
-
+		for_each(userList.begin(), userList.end(), [&](SOCKET socket) {
+		
 			SOCKADDR_IN sendAddr;
 			memset(&sendAddr, 0, sizeof(sendAddr));
 			sendAddr.sin_family = AF_INET;
-			string ip = liveSocket.find(*itr)->second;
+			string ip = liveSocket.find(socket)->second;
 			sendAddr.sin_addr.s_addr = inet_addr(ip.c_str()); // 전송 대상 IP 번호
 			sendAddr.sin_port = htons(atoi(UDP_PORT_SEND)); // UDP SEND 포트 
 			int addrSize = sizeof(sendAddr);
@@ -56,7 +55,7 @@ namespace FileService {
 
 			char fileName[BUF_SIZE];
 			strncpy(fileName, dir.c_str(), BUF_SIZE);
-			
+
 			cout << fileName << " 파일이 클라이언트 " << ip << " 로 전달합니다" << endl;
 			char buf[FILE_BUF_SIZE];
 			// 파일이름 전송	
@@ -72,7 +71,8 @@ namespace FileService {
 					Sleep(1);
 				}
 			}
-		}
+		});
+
 		cout << "전체 전달완료" << endl;
 		
 	}
@@ -96,7 +96,7 @@ namespace FileService {
 		fileName[readBytes] = '\0';
 		// char fileDir[BUF_SIZE] = "C:/Users/choiis1207/Downloads/"; // 다운로드 폴더로 경로 지정
 		char fileDir[BUF_SIZE] = "Downloads"; // 다운로드 폴더 경로생성
-		mkdir(fileDir);
+		_mkdir(fileDir);
 		strcat(fileDir, "/");
 		strcat(fileDir, fileName);
 		// 내부에서 열고

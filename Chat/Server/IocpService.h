@@ -21,6 +21,7 @@ class IocpService {
 private:
 	IocpService(const IocpService& rhs) = delete;
 	void operator=(const IocpService& rhs) = delete;
+	IocpService(IocpService&& rhs) = delete;
 public:
 	enum Operation {
 		RECV = 1,

@@ -85,6 +85,7 @@ private:
 
 	BusinessService(const BusinessService& rhs) = delete;
 	void operator=(const BusinessService& rhs) = delete;
+	BusinessService(BusinessService&& rhs) = delete;
 public:
 	// »ý¼ºÀÚ
 	BusinessService();

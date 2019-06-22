@@ -30,6 +30,8 @@ public:
 
 	Vo& operator=(const Vo& vo);
 
+	Vo(Vo&& vo);
+
 	virtual ~Vo();
 
 	int getDirection() const {
