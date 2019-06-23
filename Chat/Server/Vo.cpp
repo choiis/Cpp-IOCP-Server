@@ -30,39 +30,31 @@ Vo::~Vo() {
 	// TODO Auto-generated destructor stub
 }
 // 복사생성자
-Vo::Vo(const Vo& vo){
+Vo::Vo(const Vo& vo) : status(vo.status) , direction(vo.direction) , relationcode(vo.relationcode) {
 	strncpy(this->userId, vo.getUserId(), 20);
 	strncpy(this->nickName, vo.getNickName(), 20);
 	strncpy(this->roomName, vo.getRoomName(), 20);
 	strncpy(this->password, vo.getPassword(), 10);
 	strncpy(this->msg, vo.getMsg(), 512);
 	strncpy(this->relationto, vo.getRelationto(), 20);
-	this->status = vo.getStatus();
-	this->direction = vo.getDirection();
-	this->relationcode = vo.getRelationcode();
 }
 // 대입연산자
-Vo& Vo::operator=(const Vo& vo) {
+Vo& Vo::operator=(const Vo& vo) : status(vo.status) , direction(vo.direction) , relationcode(vo.relationcode) {
 	strncpy(this->userId, vo.getUserId(), 20);
 	strncpy(this->nickName, vo.getNickName(), 20);
 	strncpy(this->roomName, vo.getRoomName(), 20);
 	strncpy(this->password, vo.getPassword(), 10);
 	strncpy(this->msg, vo.getMsg(), 512);
 	strncpy(this->relationto, vo.getRelationto(), 20);
-	this->status = vo.getStatus();
-	this->direction = vo.getDirection();
-	this->relationcode = vo.getRelationcode();
+
 	return *this;
 }
 // 이동생성자
-Vo::Vo(Vo&& vo) {
+Vo::Vo(Vo&& vo) : status(vo.status) , direction(vo.direction) , relationcode(vo.relationcode) {
 	strncpy(this->userId, vo.getUserId(), 20);
 	strncpy(this->nickName, vo.getNickName(), 20);
 	strncpy(this->roomName, vo.getRoomName(), 20);
 	strncpy(this->password, vo.getPassword(), 10);
 	strncpy(this->msg, vo.getMsg(), 512);
 	strncpy(this->relationto, vo.getRelationto(), 20);
-	this->status = vo.getStatus();
-	this->direction = vo.getDirection();
-	this->relationcode = vo.getRelationcode();
 }
