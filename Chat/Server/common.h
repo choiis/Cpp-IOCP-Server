@@ -93,8 +93,8 @@ typedef struct { // buffer info
 // JOB Queue에 대한 구조체
 typedef struct { // buffer info
 	SOCKET socket;
-	int direction;
-	int nowStatus;
+	Direction direction;
+	ClientStatus nowStatus;
 	string msg;
 	int job;
 } JOB_DATA, *P_JOB_DATA;

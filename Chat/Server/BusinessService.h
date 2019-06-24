@@ -22,10 +22,12 @@
 // #pragma comment(lib, "Dao.h") 
 
 // SQLwork에게 전달할 정보들
-#define UPDATE_USER 1
-#define INSERT_LOGIN 2
-#define INSERT_DIRECTION 3
-#define INSERT_CHATTING 4
+enum class SqlWork{
+	UPDATE_USER,
+	INSERT_LOGIN,
+	INSERT_DIRECTION,
+	INSERT_CHATTING
+};
 
 // 서버에 접속한 유저 정보
 // client 소켓에 대응하는 세션정보
@@ -33,12 +35,12 @@ typedef struct { // socket info
 	char userName[NAME_SIZE];
 	char roomName[NAME_SIZE];
 	char userId[NAME_SIZE];
-	int status;
+	ClientStatus status;
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
 
 // 비동기 통신에 필요한 구조체
 typedef struct { // buffer info
-	int direction;
+	SqlWork direction;
 	Vo vo;
 } SQL_DATA, *P_SQL_DATA;
 
@@ -104,23 +106,23 @@ public:
 	void ClientExit(SOCKET sock);
 	// 로그인 이전 로직처리
 	// 세션값 없을 때 로직
-	void StatusLogout(SOCKET sock, int direction, const char *message);
+	void StatusLogout(SOCKET sock, Direction direction, const char *message);
 	// 대기실에서의 로직 처리
 	// 세션값 있음
-	void StatusWait(SOCKET sock, int status, int direction, const char *message);
+	void StatusWait(SOCKET sock, ClientStatus status, Direction direction, const char *message);
 	// 채팅방에서의 로직 처리
 	// 세션값 있음
-	void StatusChat(SOCKET sock, int status, int direction, const char *message);
+	void StatusChat(SOCKET sock, ClientStatus status, Direction direction, const char *message);
 	// 채팅방에서의 파일 입출력 케이스
 	void StatusFile(SOCKET sock);
 	// 클라이언트에게 받은 데이터 복사후 구조체 해제
-	string DataCopy(LPPER_IO_DATA ioInfo, int *status, int *direction);
+	string DataCopy(LPPER_IO_DATA ioInfo, ClientStatus *status, Direction *direction);
 	// 패킷 데이터 읽기
 	short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans);
 	// 로그인 여부 체크 후 반환
 	bool SessionCheck(SOCKET sock);
 	// 클라이언트의 상태정보 반환
-	int GetStatus(SOCKET sock);
+	ClientStatus GetStatus(SOCKET sock);
 	// 친구추가 기능
 	void AddFriend(SOCKET sock, const string& msg, const string& id, ClientStatus status);
 	// 연결중 socket Insert

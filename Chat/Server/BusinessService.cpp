@@ -18,7 +18,7 @@ namespace BusinessService {
 		InitializeCriticalSectionAndSpinCount(&roomCs, 2000);
 
 		InitializeCriticalSectionAndSpinCount(&sendCs, 2000);
-		
+
 		iocpService = new IocpService::IocpService();
 
 		fileService = new FileService::FileService();
@@ -49,30 +49,30 @@ namespace BusinessService {
 
 		if (!sqlQueue.empty()) { // SQL insert 한번에
 			queue<SQL_DATA> copySqlQueue;
-			
+
 			{
 				lock_guard<mutex> guard(sqlCs);  // Lock최소화
 				copySqlQueue = sqlQueue;
 				queue<SQL_DATA> emptyQueue; // 빈 큐
 				swap(sqlQueue, emptyQueue); // 빈 큐로 바꿔치기
 			}
-			
+
 			while (!copySqlQueue.empty()) { // 여러 패킷 데이터 한꺼번에 처리
 				SQL_DATA sqlData = copySqlQueue.front();
 				copySqlQueue.pop();
 
 				switch (sqlData.direction)
 				{
-				case UPDATE_USER: // ID정보 update
+				case SqlWork::UPDATE_USER: // ID정보 update
 					dao->UpdateUser(sqlData.vo);
 					break;
-				case INSERT_LOGIN: // 로그인 정보 insert
+				case SqlWork::INSERT_LOGIN: // 로그인 정보 insert
 					dao->InsertLogin(sqlData.vo);
 					break;
-				case INSERT_DIRECTION: // 지시 로그 insert
+				case SqlWork::INSERT_DIRECTION: // 지시 로그 insert
 					dao->InsertDirection(sqlData.vo);
 					break;
-				case INSERT_CHATTING: // 채팅 로그 insert
+				case SqlWork::INSERT_CHATTING: // 채팅 로그 insert
 					dao->InsertChatting(sqlData.vo);
 					break;
 				default:
@@ -83,7 +83,7 @@ namespace BusinessService {
 		else {
 			Sleep(1);
 		}
-		
+
 	}
 
 
@@ -104,55 +104,55 @@ namespace BusinessService {
 			case SendTo::SEND_ROOM: // Send to Room
 				// LockCount가 있을 때 => 방 리스트가 살아있을 때
 			{
-				EnterCriticalSection(&roomCs);
-				auto iter = roomMap.find(sendData.roomName);
-				shared_ptr<ROOM_DATA> second = nullptr;
-				if (iter != roomMap.end()) {
-					second = iter->second;
-				}
-				LeaveCriticalSection(&roomCs);
+										EnterCriticalSection(&roomCs);
+										auto iter = roomMap.find(sendData.roomName);
+										shared_ptr<ROOM_DATA> second = nullptr;
+										if (iter != roomMap.end()) {
+											second = iter->second;
+										}
+										LeaveCriticalSection(&roomCs);
 
-				if (second != nullptr && second->listCs.LockCount == -1) {
-					EnterCriticalSection(&second->listCs);
-					iocpService->SendToRoomMsg(sendData.msg.c_str(), second->userList, sendData.status);
-					LeaveCriticalSection(&second->listCs);
-				}
-				break;
+										if (second != nullptr && second->listCs.LockCount == -1) {
+											EnterCriticalSection(&second->listCs);
+											iocpService->SendToRoomMsg(sendData.msg.c_str(), second->userList, sendData.status);
+											LeaveCriticalSection(&second->listCs);
+										}
+										break;
 			}
 			case SendTo::SEND_FILE:
 			{
-				string dir = sendData.msg;
+									  string dir = sendData.msg;
 
-			    FILE* fp = fopen(dir.c_str(), "rb");
-				if (fp == NULL) {
-					cout << "파일 열기 실패" << endl;
-					return;
-				}
+									  FILE* fp = fopen(dir.c_str(), "rb");
+									  if (fp == NULL) {
+										  cout << "파일 열기 실패" << endl;
+										  return;
+									  }
 
-				int idx;
-				while ((idx = dir.find("/")) != -1) { // 파일명만 추출
-					dir.erase(0, idx + 1);
-				}
-		
-				EnterCriticalSection(&roomCs);		
-				auto iter = roomMap.find(sendData.roomName);	
-				shared_ptr<ROOM_DATA> second = nullptr;	
-				if (iter != roomMap.end()) {	
-					second = iter->second;			
-				}
-				LeaveCriticalSection(&roomCs);
+									  int idx;
+									  while ((idx = dir.find("/")) != -1) { // 파일명만 추출
+										  dir.erase(0, idx + 1);
+									  }
+
+									  EnterCriticalSection(&roomCs);
+									  auto iter = roomMap.find(sendData.roomName);
+									  shared_ptr<ROOM_DATA> second = nullptr;
+									  if (iter != roomMap.end()) {
+										  second = iter->second;
+									  }
+									  LeaveCriticalSection(&roomCs);
 
 
-				
-				// 각 방의 CS
-				if (second != nullptr && second->listCs.LockCount == -1) {
-					EnterCriticalSection(&second->listCs);
-					fileService->SendToRoomFile(fp, dir, second, liveSocket);
-					LeaveCriticalSection(&second->listCs);
-				}
-				 
-				fclose(fp);
-			    break;
+
+									  // 각 방의 CS
+									  if (second != nullptr && second->listCs.LockCount == -1) {
+										  EnterCriticalSection(&second->listCs);
+										  fileService->SendToRoomFile(fp, dir, second, liveSocket);
+										  LeaveCriticalSection(&second->listCs);
+									  }
+
+									  fclose(fp);
+									  break;
 			}
 			default:
 				break;
@@ -216,13 +216,13 @@ namespace BusinessService {
 
 			SQL_DATA sqlData1, sqlData2;
 			sqlData1.vo = vo;
-			sqlData1.direction = UPDATE_USER;
+			sqlData1.direction = SqlWork::UPDATE_USER;
 			sqlQueue.push(sqlData1); // 최근 로그인기록 업데이트
 			sqlData2.vo = vo;
-			sqlData2.direction = INSERT_LOGIN;
+			sqlData2.direction = SqlWork::INSERT_LOGIN;
 			sqlQueue.push(sqlData2); // 로그인 DB에 기록
 		}
-		
+
 		msg = nickName;
 		msg.append("님 입장을 환영합니다!\n");
 		msg.append(waitRoomMessage);
@@ -240,7 +240,7 @@ namespace BusinessService {
 				lock_guard<mutex> guard(liveSocketCs);
 				liveSocket.erase(sock);
 			}
-			
+
 			if (userMap.find(sock) != userMap.end()) {
 
 				// 세션정보 있을때는 => 세션정보 방 정보 제거 필요
@@ -305,7 +305,7 @@ namespace BusinessService {
 
 	// 로그인 이전 로직처리
 	// 세션값 없을 때 로직
-	void BusinessService::StatusLogout(SOCKET sock, int direction, const char *message) {
+	void BusinessService::StatusLogout(SOCKET sock, Direction direction, const char *message) {
 
 		string msg = "";
 
@@ -420,8 +420,7 @@ namespace BusinessService {
 
 	// 대기실에서의 로직 처리
 	// 세션값 있음
-	void BusinessService::StatusWait(SOCKET sock, int status, int direction,
-		const char *message) {
+	void BusinessService::StatusWait(SOCKET sock, ClientStatus status, Direction direction, const char *message) {
 
 		string name = userMap.find(sock)->second.userName;
 		string id = userMap.find(sock)->second.userId;
@@ -564,12 +563,12 @@ namespace BusinessService {
 
 		}
 		else if (direction == Direction::FRIEND_INFO) { // 친구 정보 요청
-			
+
 			Vo vo;
 			vo.setUserId(id.c_str());
 			vector<Vo> vec = dao->selectFriends(vo);
 
-			string sendMsg ="친구 정보 리스트";
+			string sendMsg = "친구 정보 리스트";
 			if (vec.size() == 0) {
 				sendMsg.append("\n등록된 친구가 없습니다");
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
@@ -581,12 +580,12 @@ namespace BusinessService {
 
 				// Select해서 가져온 유저의 친구정보
 				for (int i = 0; i < vec.size(); i++) {
-					
+
 					unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
 					bool exist = false;
 					// userMap을 탐색하여 친구 위치 가공
 					for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
-						if (strcmp(vec[i].getNickName() ,iter->second.userName) == 0) {
+						if (strcmp(vec[i].getNickName(), iter->second.userName) == 0) {
 							sendMsg += "\n";
 							sendMsg += vec[i].getNickName();
 							sendMsg += ":";
@@ -611,10 +610,10 @@ namespace BusinessService {
 				}
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 			}
-			
+
 		}
 		else if (direction == Direction::FRIEND_ADD) { // 친구 추가
-			AddFriend(sock, msg, id , ClientStatus::STATUS_WAITING);
+			AddFriend(sock, msg, id, ClientStatus::STATUS_WAITING);
 		}
 		else if (direction == Direction::FRIEND_GO) { // 친구가 있는 방으로
 			Vo vo;
@@ -745,7 +744,7 @@ namespace BusinessService {
 					LeaveCriticalSection(&userCs);
 
 					unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
-			
+
 					for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
 						if (name.compare(iter->second.userName) == 0) {
 							find = true;
@@ -803,16 +802,15 @@ namespace BusinessService {
 			lock_guard<mutex> guard(sqlCs);
 			SQL_DATA sqlData;
 			sqlData.vo = vo;
-			sqlData.direction = INSERT_DIRECTION;
+			sqlData.direction = SqlWork::INSERT_DIRECTION;
 			sqlQueue.push(sqlData); // 지시 기록 insert
 		}
-		
+
 	}
 
 	// 채팅방에서의 로직 처리
 	// 세션값 있음
-	void BusinessService::StatusChat(SOCKET sock, int status, int direction,
-		const char *message) {
+	void BusinessService::StatusChat(SOCKET sock, ClientStatus status, Direction direction, const char *message) {
 
 		string name;
 		string msg;
@@ -860,10 +858,10 @@ namespace BusinessService {
 			LeaveCriticalSection(&roomCs);
 		}
 		else if (msg.find("\\add") != -1) { // 친구추가
-		
+
 			msg.erase(0, 5); // 친구 이름 반환
 			// 친구추가
-			AddFriend(sock, msg , id , ClientStatus::STATUS_CHATTIG);
+			AddFriend(sock, msg, id, ClientStatus::STATUS_CHATTIG);
 		}
 		else { // 채팅방에서 채팅중
 
@@ -896,7 +894,7 @@ namespace BusinessService {
 
 				SQL_DATA sqlData;
 				sqlData.vo = vo;
-				sqlData.direction = INSERT_CHATTING;
+				sqlData.direction = SqlWork::INSERT_CHATTING;
 				sqlQueue.push(sqlData); // 대화 기록 업데이트
 			}
 		}
@@ -904,7 +902,7 @@ namespace BusinessService {
 
 	// 채팅방에서의 파일 입출력 케이스
 	void BusinessService::StatusFile(SOCKET sock) {
-		
+
 		string fileDir = fileService->RecvFile(sock);
 		// SendQueue에 Insert
 		InsertSendQueue(SendTo::SEND_ROOM, "", userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
@@ -915,8 +913,7 @@ namespace BusinessService {
 
 	// 클라이언트에게 받은 데이터 복사후 구조체 해제
 	// 사용 메모리 전부 반환
-	string BusinessService::DataCopy(LPPER_IO_DATA ioInfo, int *status,
-		int *direction) {
+	string BusinessService::DataCopy(LPPER_IO_DATA ioInfo, ClientStatus *status, Direction *direction) {
 
 		copy(((char*)ioInfo->recvBuffer) + 2, ((char*)ioInfo->recvBuffer) + 6,
 			(char*)status);
@@ -1031,9 +1028,9 @@ namespace BusinessService {
 	}
 
 	// 클라이언트의 상태정보 반환
-	int BusinessService::GetStatus(SOCKET sock) {
+	ClientStatus BusinessService::GetStatus(SOCKET sock) {
 		EnterCriticalSection(&this->userCs);
-		int status = userMap.find(sock)->second.status;
+		ClientStatus status = userMap.find(sock)->second.status;
 		LeaveCriticalSection(&this->userCs);
 		return status;
 	}
@@ -1080,7 +1077,7 @@ namespace BusinessService {
 	}
 
 	void BusinessService::BanUser(SOCKET socket, const char* nickName) {
-	
+
 		EnterCriticalSection(&userCs);
 		unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
 		LeaveCriticalSection(&userCs);
@@ -1100,7 +1097,7 @@ namespace BusinessService {
 					NAME_SIZE);
 				strncpy(name, userMap.find(sock)->second.userName, NAME_SIZE);
 				strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
-				
+
 				// 로그인 Set에서 out
 				EnterCriticalSection(&idCs);
 				idSet.erase(id);
@@ -1148,7 +1145,7 @@ namespace BusinessService {
 				userMap.erase(sock); // 접속 소켓 정보 삭제
 				cout << "현재 접속 인원 수 : " << userMap.size() << endl;
 				LeaveCriticalSection(&userCs);
-				
+
 				break;
 			}
 		}

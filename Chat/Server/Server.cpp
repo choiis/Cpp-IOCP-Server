@@ -96,7 +96,7 @@ unsigned WINAPI WorkThread(void *arg) {
 				}
 				else { // 세션값 있을때 => 대기방 또는 채팅방 상태
 
-					int status = businessService->GetStatus(
+					ClientStatus status = businessService->GetStatus(
 						jobData.socket);
 
 					if (status == ClientStatus::STATUS_WAITING && jobData.direction != -1) { // 대기실 케이스

@@ -22,6 +22,10 @@ private:
 	SOCKET udpSocket;
 	// udp Send 社掴
 	SOCKET udpSendSocket;
+
+	FileService(const FileService& rhs) = delete;
+	void operator=(const FileService& rhs) = delete;
+	FileService(FileService&& rhs) = delete;
 public:
 	// 持失切
 	FileService();

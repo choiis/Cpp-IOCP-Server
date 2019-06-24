@@ -8,7 +8,7 @@
 #include "Dao.h"
 
 Dao::Dao() {
-	
+
 	// 환경 핸들러 할당
 	SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &hEnv);
 	// ODBC 드라이버 버전 명시
@@ -29,7 +29,7 @@ Dao::Dao() {
 }
 
 Dao::~Dao() {
-	
+
 	if (hStmt) {
 		SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
 	}
@@ -43,12 +43,12 @@ Dao::~Dao() {
 		SQLFreeHandle(SQL_HANDLE_ENV, hDbc);
 	}
 }
-	
+
 // ID정보 select
 Vo& Dao::selectUser(Vo& vo){
-	
+
 	lock_guard<mutex> guard(this->lock);
-	
+
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	char query[512] = "select userid,password,nickname from cso_id with (nolock) where userid = ? ";
 
@@ -82,7 +82,7 @@ Vo& Dao::selectUser(Vo& vo){
 
 // ID정보 update
 void Dao::UpdateUser(const Vo& vo){
-	
+
 	lock_guard<mutex> guard(this->lock);
 
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -101,7 +101,7 @@ void Dao::UpdateUser(const Vo& vo){
 
 // ID정보 insert
 void Dao::InsertUser(const Vo& vo) {
-	
+
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 
@@ -120,7 +120,7 @@ void Dao::InsertUser(const Vo& vo) {
 
 // 로그인 정보 insert
 void Dao::InsertLogin(const Vo& vo) {
-	
+
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 
@@ -134,14 +134,14 @@ void Dao::InsertLogin(const Vo& vo) {
 	res = SQLExecute(hStmt);
 
 	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
-	
+
 }
 
 // 지시 로그 insert
 void Dao::InsertDirection(const Vo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
-		
+
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 
 	char query[512] = "insert into cso_direction(nickname, logdate, status, direction , message) values(? ,getdate() ,? ,? ,? ) ";
@@ -159,12 +159,12 @@ void Dao::InsertDirection(const Vo& vo) {
 
 	res = SQLExecute(hStmt);
 	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
-	
+
 }
 
 // 채팅 로그 insert
 void  Dao::InsertChatting(const Vo& vo) {
-	
+
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 
@@ -178,12 +178,12 @@ void  Dao::InsertChatting(const Vo& vo) {
 
 	res = SQLExecute(hStmt);
 	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
-	
+
 }
 
 // 친구 또는 차단관계 insert
 int Dao::InsertRelation(const Vo& vo){
-	
+
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 
@@ -200,13 +200,13 @@ int Dao::InsertRelation(const Vo& vo){
 	res = SQLExecute(hStmt);
 	int result = res;
 	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
-	
+
 	return result;
 }
 
 // ID정보 있는지 확인
 Vo& Dao::findUserId(const Vo& vo) {
-	
+
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	char query[512] = "select userid, nickname from cso_id  with (nolock) where nickname = ? ";
@@ -233,14 +233,14 @@ Vo& Dao::findUserId(const Vo& vo) {
 		vo2.setRelationto("");
 	}
 
-	
+
 	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
 
 	return vo2;
 }
 // 친구 정보 select
 vector<Vo> Dao::selectFriends(const Vo& vo) {
-	
+
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	char query[1024] = "select T1.relationfrom, T1.relationto, T2.nickname from cso_relation T1 with (nolock), cso_id T2 with (nolock)	where T1.relationto = T2.userid	and T1.relationfrom = ? and T1.relationcode = 1";
@@ -269,7 +269,7 @@ vector<Vo> Dao::selectFriends(const Vo& vo) {
 		vec.push_back(vo);
 	}
 
-	
+
 	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
 
 	return vec;
@@ -277,7 +277,7 @@ vector<Vo> Dao::selectFriends(const Vo& vo) {
 
 // 친구한명정보 select
 Vo& Dao::selectOneFriend(const Vo& vo) {
-	
+
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
 	char query[1024] = "select T1.relationfrom, T1.relationto, T2.nickname from cso_relation T1 with (nolock) , cso_id T2	with (nolock) where T1.relationto = T2.userid	and T1.relationfrom = ? and T2.nickname = ? and T1.relationcode = 1";

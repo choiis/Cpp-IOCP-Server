@@ -28,7 +28,7 @@ private:
 	SQLHDBC hDbc;
 	SQLHSTMT hStmt;
 	SQLRETURN res;
-	// idMap µø±‚»≠
+	// idMap ?¢Ø°æ??°©
 	mutex lock;
 
 public:

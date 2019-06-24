@@ -1,9 +1,9 @@
 /*
- * Vo.h
- *
- *  Created on: 2019. 1. 28.
- *      Author: choiis1207
- */
+* Vo.h
+*
+*  Created on: 2019. 1. 28.
+*      Author: choiis1207
+*/
 
 #ifndef VO_H_
 #define VO_H_
@@ -69,7 +69,7 @@ public:
 	void setRelationcode(const int relationcode) {
 		this->relationcode = relationcode;
 	}
-	
+
 	const char* getNickName() const {
 		return nickName;
 	}
