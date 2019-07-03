@@ -45,7 +45,7 @@ Dao::~Dao() {
 }
 
 // ID정보 select
-Vo& Dao::selectUser(Vo& vo){
+Vo Dao::selectUser(Vo& vo){
 
 	lock_guard<mutex> guard(this->lock);
 
@@ -205,7 +205,7 @@ int Dao::InsertRelation(const Vo& vo){
 }
 
 // ID정보 있는지 확인
-Vo& Dao::findUserId(const Vo& vo) {
+Vo Dao::findUserId(const Vo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -276,7 +276,7 @@ vector<Vo> Dao::selectFriends(const Vo& vo) {
 }
 
 // 친구한명정보 select
-Vo& Dao::selectOneFriend(const Vo& vo) {
+Vo Dao::selectOneFriend(const Vo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);

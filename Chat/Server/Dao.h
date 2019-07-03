@@ -35,7 +35,7 @@ public:
 	Dao();
 	virtual ~Dao();
 
-	Vo& selectUser(Vo& vo);
+	Vo selectUser(Vo& vo);
 
 	void UpdateUser(const Vo& vo);
 
@@ -49,11 +49,11 @@ public:
 
 	int InsertRelation(const Vo& vo);
 
-	Vo& findUserId(const Vo& vo);
+	Vo findUserId(const Vo& vo);
 
 	vector<Vo> selectFriends(const Vo& vo);
 
-	Vo& selectOneFriend(const Vo& vo);
+	Vo selectOneFriend(const Vo& vo);
 
 	int DeleteRelation(const Vo& vo);
 };
