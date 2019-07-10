@@ -10,6 +10,7 @@
 namespace BusinessService {
 
 	BusinessService::BusinessService() {
+
 		// 임계영역 Object 생성
 		InitializeCriticalSectionAndSpinCount(&idCs, 2000);
 
@@ -104,55 +105,53 @@ namespace BusinessService {
 			case SendTo::SEND_ROOM: // Send to Room
 				// LockCount가 있을 때 => 방 리스트가 살아있을 때
 			{
-										EnterCriticalSection(&roomCs);
-										auto iter = roomMap.find(sendData.roomName);
-										shared_ptr<ROOM_DATA> second = nullptr;
-										if (iter != roomMap.end()) {
-											second = iter->second;
-										}
-										LeaveCriticalSection(&roomCs);
+				EnterCriticalSection(&roomCs);
+				auto iter = roomMap.find(sendData.roomName);
+				shared_ptr<ROOM_DATA> second = nullptr;
+				if (iter != roomMap.end()) {
+					second = iter->second;
+				}
+				LeaveCriticalSection(&roomCs);
 
-										if (second != nullptr && second->listCs.LockCount == -1) {
-											EnterCriticalSection(&second->listCs);
-											iocpService->SendToRoomMsg(sendData.msg.c_str(), second->userList, sendData.status);
-											LeaveCriticalSection(&second->listCs);
-										}
-										break;
+				if (second != nullptr && second->listCs.LockCount == -1) {
+					EnterCriticalSection(&second->listCs);
+					iocpService->SendToRoomMsg(sendData.msg.c_str(), second->userList, sendData.status);
+					LeaveCriticalSection(&second->listCs);
+				}
+				break;
 			}
 			case SendTo::SEND_FILE:
 			{
-									  string dir = sendData.msg;
+				string dir = sendData.msg;
 
-									  FILE* fp = fopen(dir.c_str(), "rb");
-									  if (fp == NULL) {
-										  cout << "파일 열기 실패" << endl;
-										  return;
-									  }
+				FILE* fp = fopen(dir.c_str(), "rb");
+				if (fp == NULL) {
+					cout << "파일 열기 실패" << endl;
+					 return;
+				}
 
-									  int idx;
-									  while ((idx = dir.find("/")) != -1) { // 파일명만 추출
-										  dir.erase(0, idx + 1);
-									  }
+				int idx;
+				while ((idx = dir.find("/")) != -1) { // 파일명만 추출
+					 dir.erase(0, idx + 1);
+				}
 
-									  EnterCriticalSection(&roomCs);
-									  auto iter = roomMap.find(sendData.roomName);
-									  shared_ptr<ROOM_DATA> second = nullptr;
-									  if (iter != roomMap.end()) {
-										  second = iter->second;
-									  }
-									  LeaveCriticalSection(&roomCs);
+				EnterCriticalSection(&roomCs);
+				auto iter = roomMap.find(sendData.roomName);
+				shared_ptr<ROOM_DATA> second = nullptr;
+				if (iter != roomMap.end()) {
+					second = iter->second;
+				}
+				LeaveCriticalSection(&roomCs);
 
+				// 각 방의 CS
+				if (second != nullptr && second->listCs.LockCount == -1) {
+					EnterCriticalSection(&second->listCs);
+					fileService->SendToRoomFile(fp, dir, second, liveSocket);
+					LeaveCriticalSection(&second->listCs);
+				}
 
-
-									  // 각 방의 CS
-									  if (second != nullptr && second->listCs.LockCount == -1) {
-										  EnterCriticalSection(&second->listCs);
-										  fileService->SendToRoomFile(fp, dir, second, liveSocket);
-										  LeaveCriticalSection(&second->listCs);
-									  }
-
-									  fclose(fp);
-									  break;
+				fclose(fp);
+				break;
 			}
 			default:
 				break;
@@ -208,7 +207,7 @@ namespace BusinessService {
 		cout << "현재 접속 인원 수 : " << userMap.size() << endl;
 		LeaveCriticalSection(&userCs);
 
-		Vo vo; // DB SQL문에 필요한 Data
+		LogVo vo; // DB SQL문에 필요한 Data
 		vo.setUserId(userInfo.userId);
 		vo.setNickName(userInfo.userName);
 		{
@@ -306,7 +305,9 @@ namespace BusinessService {
 	// 로그인 이전 로직처리
 	// 세션값 없을 때 로직
 	void BusinessService::StatusLogout(SOCKET sock, Direction direction, const char *message) {
-
+#if defined(DEBUG)
+		_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF)
+#endif
 		string msg = "";
 
 		if (direction == Direction::USER_MAKE) { // 1번 계정생성
@@ -325,7 +326,7 @@ namespace BusinessService {
 			// 유효성 검증 필요
 			if (sArr[0] != NULL && sArr[1] != NULL && sArr[2] != NULL) {
 
-				Vo vo;
+				UserVo vo;
 				vo.setUserId(sArr[0]);
 				vo = move(dao->selectUser(vo));
 
@@ -369,7 +370,7 @@ namespace BusinessService {
 			}
 			if (sArr[0] != NULL && sArr[1] != NULL) {
 
-				Vo vo;
+				UserVo vo;
 				vo.setUserId(sArr[0]);
 				vo = move(dao->selectUser(vo));
 
@@ -421,7 +422,9 @@ namespace BusinessService {
 	// 대기실에서의 로직 처리
 	// 세션값 있음
 	void BusinessService::StatusWait(SOCKET sock, ClientStatus status, Direction direction, const char *message) {
-
+#if defined(DEBUG)
+		_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF)
+#endif
 		string name = userMap.find(sock)->second.userName;
 		string id = userMap.find(sock)->second.userId;
 		string msg = string(message);
@@ -517,10 +520,10 @@ namespace BusinessService {
 			else {
 				str += "방 정보 리스트";
 				EnterCriticalSection(&roomCs);
-				unordered_map<string, shared_ptr<ROOM_DATA>> roomCopyMap = roomMap;
+				map<string, shared_ptr<ROOM_DATA>> roomCopyMap = roomMap;
 				LeaveCriticalSection(&roomCs);
 				// roomMap 계속 잡고 있지 않도록 깊은복사
-				unordered_map<string, shared_ptr<ROOM_DATA>>::const_iterator iter;
+				map<string, shared_ptr<ROOM_DATA>>::const_iterator iter;
 
 				// 방정보를 문자열로 만든다
 				for (iter = roomCopyMap.begin(); iter != roomCopyMap.end();
@@ -564,9 +567,9 @@ namespace BusinessService {
 		}
 		else if (direction == Direction::FRIEND_INFO) { // 친구 정보 요청
 
-			Vo vo;
+			RelationVo vo;
 			vo.setUserId(id.c_str());
-			vector<Vo> vec = dao->selectFriends(vo);
+			vector<RelationVo> vec = move(dao->selectFriends(vo));
 
 			string sendMsg = "친구 정보 리스트";
 			if (vec.size() == 0) {
@@ -616,11 +619,11 @@ namespace BusinessService {
 			AddFriend(sock, msg, id, ClientStatus::STATUS_WAITING);
 		}
 		else if (direction == Direction::FRIEND_GO) { // 친구가 있는 방으로
-			Vo vo;
+			RelationVo vo;
 			vo.setUserId(id.c_str());
 			vo.setRelationto(msg.c_str());
 			// 요청 친구 정보 select
-			Vo vo2 = dao->selectOneFriend(vo);
+			RelationVo vo2 = move(dao->selectOneFriend(vo));
 
 			if (strcmp(vo2.getNickName(), "") == 0) { // 친구정보 못찾음
 				string sendMsg = "친구정보를 찾을 수 없습니다\n";
@@ -692,7 +695,7 @@ namespace BusinessService {
 		}
 		else if (direction == Direction::FRIEND_DELETE) { // 친구 삭제
 
-			Vo vo;
+			RelationVo vo;
 			vo.setUserId(id.c_str());
 			vo.setRelationcode(1);
 			vo.setNickName(msg.c_str());
@@ -792,7 +795,7 @@ namespace BusinessService {
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 		}
 
-		Vo vo; // DB SQL문에 필요한 Data
+		LogVo vo; // DB SQL문에 필요한 Data
 		vo.setNickName(name.c_str());
 		vo.setMsg(message);
 		vo.setDirection(direction);
@@ -811,7 +814,9 @@ namespace BusinessService {
 	// 채팅방에서의 로직 처리
 	// 세션값 있음
 	void BusinessService::StatusChat(SOCKET sock, ClientStatus status, Direction direction, const char *message) {
-
+#if defined(DEBUG)
+		_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF)
+#endif
 		string name;
 		string msg;
 		string id;
@@ -873,7 +878,7 @@ namespace BusinessService {
 			char roomName[NAME_SIZE];
 
 			EnterCriticalSection(&userCs);
-			unordered_map<string, shared_ptr<ROOM_DATA>>::iterator it = roomMap.find(
+			map<string, shared_ptr<ROOM_DATA>>::iterator it = roomMap.find(
 				userMap.find(sock)->second.roomName);
 			strncpy(roomName, userMap.find(sock)->second.roomName, NAME_SIZE);
 			LeaveCriticalSection(&userCs);
@@ -882,7 +887,7 @@ namespace BusinessService {
 				InsertSendQueue(SendTo::SEND_ROOM, sendMsg, userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_CHATTIG);
 			}
 
-			Vo vo; // DB SQL문에 필요한 Data
+			LogVo vo; // DB SQL문에 필요한 Data
 			vo.setNickName(name.c_str());
 			vo.setRoomName(roomName);
 			vo.setMsg(msg.c_str());
@@ -1037,9 +1042,9 @@ namespace BusinessService {
 
 	// 친구추가 기능
 	void BusinessService::AddFriend(SOCKET sock, const string& msg, const string& id, ClientStatus status) {
-		Vo vo;
+		RelationVo vo;
 		vo.setNickName(msg.c_str());
-		Vo vo2 = dao->findUserId(vo); // 아이디 존재 여부 검색
+		RelationVo vo2 = move(dao->findUserId(vo)); // 아이디 존재 여부 검색
 
 		string sendMsg;
 

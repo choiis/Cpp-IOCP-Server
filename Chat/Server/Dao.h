@@ -28,33 +28,33 @@ private:
 	SQLHDBC hDbc;
 	SQLHSTMT hStmt;
 	SQLRETURN res;
-	// idMap ?¢Ø°æ??°©
+	// idMap µø±‚»≠
 	mutex lock;
 
 public:
 	Dao();
 	virtual ~Dao();
 
-	Vo selectUser(Vo& vo);
+	UserVo selectUser(UserVo& vo);
 
-	void UpdateUser(const Vo& vo);
+	void UpdateUser(const LogVo& vo);
 
-	void InsertUser(const Vo& vo);
+	void InsertUser(const UserVo& vo);
 
-	void InsertLogin(const Vo& vo);
+	void InsertLogin(const LogVo& vo);
 
-	void InsertDirection(const Vo& vo);
+	void InsertDirection(const LogVo& vo);
 
-	void InsertChatting(const Vo& vo);
+	void InsertChatting(const LogVo& vo);
 
-	int InsertRelation(const Vo& vo);
+	int InsertRelation(const RelationVo& vo);
 
-	Vo findUserId(const Vo& vo);
+	RelationVo findUserId(const RelationVo& vo);
 
-	vector<Vo> selectFriends(const Vo& vo);
+	vector<RelationVo> selectFriends(const RelationVo& vo);
 
-	Vo selectOneFriend(const Vo& vo);
+	RelationVo selectOneFriend(const RelationVo& vo);
 
-	int DeleteRelation(const Vo& vo);
+	int DeleteRelation(const RelationVo& vo);
 };
 #endif /* DAO_H_ */

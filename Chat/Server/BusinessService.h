@@ -11,6 +11,7 @@
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
+#include <map>
 #include <string>
 #include <queue>
 #include <direct.h>
@@ -41,7 +42,7 @@ typedef struct { // socket info
 // 비동기 통신에 필요한 구조체
 typedef struct { // buffer info
 	SqlWork direction;
-	Vo vo;
+	LogVo vo;
 } SQL_DATA, *P_SQL_DATA;
 
 namespace BusinessService {
@@ -55,7 +56,7 @@ private:
 	// 서버에 접속한 유저 자료 저장
 	unordered_map<SOCKET, PER_HANDLE_DATA> userMap;
 	// 서버의 방 정보 저장
-	unordered_map<string, shared_ptr<ROOM_DATA>> roomMap;
+	map<string, shared_ptr<ROOM_DATA>> roomMap;
 
 	queue<SQL_DATA> sqlQueue;
 
@@ -77,7 +78,7 @@ private:
 
 	// 접속끊어진 socket은 Send에서 제외
 	// UDP 전송 Case때문에 각 클라이언트 socket의 IP도 저장한다
-	unordered_map<SOCKET, string> liveSocket;
+	map<SOCKET, string> liveSocket;
 
 	mutex liveSocketCs;
 
@@ -138,7 +139,7 @@ public:
 		return idSet;
 	}
 
-	const unordered_map<string, std::shared_ptr<ROOM_DATA>>& getRoomMap() const {
+	const map<string, std::shared_ptr<ROOM_DATA>>& getRoomMap() const {
 		return roomMap;
 	}
 

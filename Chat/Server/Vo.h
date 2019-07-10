@@ -14,95 +14,132 @@ class Vo {
 private:
 	char userId[20];
 	char nickName[20];
-	char roomName[20];
-	char msg[512];
-	int status;
-	int direction;
-	char password[10];
-	char relationto[20];
-	int relationcode;
-public:
+protected:
 	Vo();
-
-	Vo(const char* userId, const char* nickName, const char* roomName, const char* msg, int status, int direction, const char* password, const char* relationto, int relationcode);
 
 	Vo(const Vo& vo);
 
 	Vo& operator=(const Vo& vo);
+public:
 
 	virtual ~Vo();
 
-	int getDirection() const {
-		return direction;
-	}
-
-	void setDirection(const int direction) {
-		this->direction = direction;
-	}
-
 	void setUserId(const char* userId) {
 		strncpy(this->userId, userId, 10);
-	}
-
-	void setRoomName(const char* roomName) {
-		strncpy(this->roomName, roomName, 10);
-	}
-
-	void setPassword(const char* password) {
-		strncpy(this->password, password, 10);
 	}
 
 	void setNickName(const char* nickName) {
 		strncpy(this->nickName, nickName, 20);
 	}
 
-	void setMsg(const char* msg) {
-		strncpy(this->msg, msg, 512);
-	}
-
-	void setRelationto(const char* relationto) {
-		strncpy(this->relationto, relationto, 512);
-	}
-
-	void setRelationcode(const int relationcode) {
-		this->relationcode = relationcode;
-	}
 
 	const char* getNickName() const {
 		return nickName;
-	}
-
-	const char* getRoomName() const {
-		return roomName;
-	}
-
-	int getStatus() const {
-		return status;
-	}
-
-	void setStatus(const int status) {
-		this->status = status;
 	}
 
 	const char* getUserId() const {
 		return userId;
 	}
 
-	const char* getMsg() const {
-		return msg;
+};
+
+class UserVo :public Vo {
+private:
+	char password[10];
+public:
+	UserVo();
+
+	UserVo(const UserVo& vo);
+
+	UserVo& operator=(const UserVo& vo);
+
+	virtual ~UserVo();
+
+	void setPassword(const char* password) {
+		strncpy(this->password, password, 10);
 	}
 
 	const char* getPassword() const {
 		return password;
+	}
+};
+
+class LogVo : public Vo {
+private:
+	char roomName[20];
+	char msg[512];
+	int status;
+	int direction;
+public:
+	LogVo();
+
+	LogVo(const LogVo& vo);
+
+	LogVo& operator=(const LogVo& vo);
+
+	virtual ~LogVo();
+
+	void setRoomName(const char* roomName) {
+		strncpy(this->roomName, roomName, 20);
+	}
+
+	const char* getRoomName() const {
+		return roomName;
+	}
+
+	void setMsg(const char* msg) {
+		strncpy(this->msg, msg, 512);
+	}
+
+	const char* getMsg() const {
+		return msg;
+	}
+
+	void setStatus(int status) {
+		this->status = status;
+	}
+
+	int getStatus() const {
+		return status;
+	}
+
+	void setDirection(int direction) {
+		this->direction = direction;
+	}
+
+	int getDirection() const{
+		return direction;
+	}
+};
+
+class RelationVo : public Vo {
+private:
+	char relationto[20];
+	int relationcode;
+public:
+	RelationVo();
+
+	RelationVo(const RelationVo& vo);
+
+	RelationVo& operator=(const RelationVo& vo);
+
+	virtual ~RelationVo();
+
+	void setRelationto(const char* relationto) {
+		strncpy(this->relationto, relationto, 20);
 	}
 
 	const char* getRelationto() const {
 		return relationto;
 	}
 
+	void setRelationcode(int relationcode) {
+		this->relationcode = relationcode;
+	}
+
 	int getRelationcode() const {
 		return relationcode;
 	}
-};
 
+};
 #endif /* VO_H_ */

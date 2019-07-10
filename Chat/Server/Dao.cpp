@@ -45,7 +45,7 @@ Dao::~Dao() {
 }
 
 // ID정보 select
-Vo Dao::selectUser(Vo& vo){
+UserVo Dao::selectUser(UserVo& vo){
 
 	lock_guard<mutex> guard(this->lock);
 
@@ -81,7 +81,7 @@ Vo Dao::selectUser(Vo& vo){
 
 
 // ID정보 update
-void Dao::UpdateUser(const Vo& vo){
+void Dao::UpdateUser(const LogVo& vo){
 
 	lock_guard<mutex> guard(this->lock);
 
@@ -100,7 +100,7 @@ void Dao::UpdateUser(const Vo& vo){
 }
 
 // ID정보 insert
-void Dao::InsertUser(const Vo& vo) {
+void Dao::InsertUser(const UserVo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -119,7 +119,7 @@ void Dao::InsertUser(const Vo& vo) {
 }
 
 // 로그인 정보 insert
-void Dao::InsertLogin(const Vo& vo) {
+void Dao::InsertLogin(const LogVo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -138,7 +138,7 @@ void Dao::InsertLogin(const Vo& vo) {
 }
 
 // 지시 로그 insert
-void Dao::InsertDirection(const Vo& vo) {
+void Dao::InsertDirection(const LogVo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
 
@@ -163,7 +163,7 @@ void Dao::InsertDirection(const Vo& vo) {
 }
 
 // 채팅 로그 insert
-void  Dao::InsertChatting(const Vo& vo) {
+void  Dao::InsertChatting(const LogVo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -182,7 +182,7 @@ void  Dao::InsertChatting(const Vo& vo) {
 }
 
 // 친구 또는 차단관계 insert
-int Dao::InsertRelation(const Vo& vo){
+int Dao::InsertRelation(const RelationVo& vo){
 
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -205,7 +205,7 @@ int Dao::InsertRelation(const Vo& vo){
 }
 
 // ID정보 있는지 확인
-Vo Dao::findUserId(const Vo& vo) {
+RelationVo Dao::findUserId(const RelationVo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -223,7 +223,7 @@ Vo Dao::findUserId(const Vo& vo) {
 
 	res = SQLExecute(hStmt);
 
-	Vo vo2;
+	RelationVo vo2;
 
 	if (SQLFetch(hStmt) != SQL_NO_DATA) {
 		vo2.setRelationto(userid);
@@ -239,7 +239,7 @@ Vo Dao::findUserId(const Vo& vo) {
 	return vo2;
 }
 // 친구 정보 select
-vector<Vo> Dao::selectFriends(const Vo& vo) {
+vector<RelationVo> Dao::selectFriends(const RelationVo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -259,10 +259,10 @@ vector<Vo> Dao::selectFriends(const Vo& vo) {
 
 	res = SQLExecute(hStmt);
 
-	vector<Vo> vec;
+	vector<RelationVo> vec;
 
 	while (SQLFetch(hStmt) != SQL_NO_DATA) {
-		Vo vo;
+		RelationVo vo;
 		vo.setUserId(userid);
 		vo.setRelationto(relationto);
 		vo.setNickName(nickname);
@@ -276,7 +276,7 @@ vector<Vo> Dao::selectFriends(const Vo& vo) {
 }
 
 // 친구한명정보 select
-Vo Dao::selectOneFriend(const Vo& vo) {
+RelationVo Dao::selectOneFriend(const RelationVo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
@@ -297,7 +297,7 @@ Vo Dao::selectOneFriend(const Vo& vo) {
 
 	res = SQLExecute(hStmt);
 
-	Vo vo2;
+	RelationVo vo2;
 	if (SQLFetch(hStmt) != SQL_NO_DATA) {
 		vo2.setUserId(userid);
 		vo2.setRelationto(relationto);
@@ -310,7 +310,7 @@ Vo Dao::selectOneFriend(const Vo& vo) {
 }
 
 // 친구 또는 차단관계 delete
-int Dao::DeleteRelation(const Vo& vo) {
+int Dao::DeleteRelation(const RelationVo& vo) {
 
 	lock_guard<mutex> guard(this->lock);
 	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);

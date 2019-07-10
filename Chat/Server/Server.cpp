@@ -17,7 +17,7 @@
 using namespace std;
 
 // 내부 비지니스 로직 처리 클래스
-BusinessService::BusinessService *businessService;
+BusinessService::BusinessService businessService;
 
 // Recv가 Work에게 전달
 queue<JOB_DATA> jobQueue;
@@ -30,7 +30,7 @@ atomic<int> packetCnt = 0;
 unsigned WINAPI SQLThread(void *arg) {
 
 	while (true) {
-		businessService->SQLwork();
+		businessService.SQLwork();
 	}
 
 	return 0;
@@ -40,7 +40,7 @@ unsigned WINAPI SQLThread(void *arg) {
 unsigned WINAPI SendThread(void *arg) {
 
 	while (true) {
-		businessService->Sendwork();
+		businessService.Sendwork();
 	}
 	return 0;
 }
@@ -51,7 +51,9 @@ unsigned WINAPI SendThread(void *arg) {
 unsigned WINAPI WorkThread(void *arg) {
 
 	while (true) {
-
+#if defined(DEBUG)
+		_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF)
+#endif
 		if (!jobQueue.empty()) {
 
 			queue<JOB_DATA> copyJobQueue;
@@ -67,51 +69,51 @@ unsigned WINAPI WorkThread(void *arg) {
 				JOB_DATA jobData = copyJobQueue.front();
 				copyJobQueue.pop();
 
-				if (businessService->IsSocketDead(jobData.socket)) {
+				if (businessService.IsSocketDead(jobData.socket)) {
 					continue;
 				}
 
 
 				// DataCopy에서 받은 ioInfo 모두 free
-				if (!businessService->SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
+				if (!businessService.SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
 					// 로그인 이전 로직 처리
 
 					if (jobData.direction == Direction::CALLCOUNT) { // node js 서버로 전체 로그인된 유저수 
 
 						int cnt = packetCnt;
 						packetCnt = 0;
-						businessService->CallCnt(jobData.socket, cnt);
+						businessService.CallCnt(jobData.socket, cnt);
 					}
 					else if (jobData.direction == Direction::BAN) {
-						businessService->BanUser(jobData.socket, jobData.msg.substr(0, jobData.nowStatus).c_str());
+						businessService.BanUser(jobData.socket, jobData.msg.substr(0, jobData.nowStatus).c_str());
 					}
 					else if (jobData.direction == Direction::EXIT) {
 						// 정상종료
 						exit(EXIT_SUCCESS);
 					}
 					else { // 관리콘솔이 아니라 클라이언트에서 보낼 때
-						businessService->StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());
+						businessService.StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());
 					}
 					// 세션값 없음 => 로그인 이전 분기 끝
 				}
 				else { // 세션값 있을때 => 대기방 또는 채팅방 상태
 
-					ClientStatus status = businessService->GetStatus(
+					ClientStatus status = businessService.GetStatus(
 						jobData.socket);
 
 					if (status == ClientStatus::STATUS_WAITING && jobData.direction != -1) { // 대기실 케이스
 						// 대기실 처리 함수
-						businessService->StatusWait(jobData.socket, status, jobData.direction,
+						businessService.StatusWait(jobData.socket, status, jobData.direction,
 							jobData.msg.c_str());
 					}
 					else if (status == ClientStatus::STATUS_CHATTIG) { // 채팅 중 케이스
 						// 채팅방 처리 함수
 
 						if (jobData.direction == Direction::FILE_SEND) { // 파일 전송 케이스
-							businessService->StatusFile(jobData.socket);
+							businessService.StatusFile(jobData.socket);
 						}
 						else { // 일반 채팅일때
-							businessService->StatusChat(jobData.socket, status, jobData.direction,
+							businessService.StatusChat(jobData.socket, status, jobData.direction,
 								jobData.msg.c_str());
 						}
 
@@ -165,12 +167,12 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 				break;
 			}
 
-			businessService->ClientExit(sock);
+			businessService.ClientExit(sock);
 			MPool* mp = MPool::getInstance();
 			mp->Free(ioInfo);
 		}
-		else if (businessService->getIocpService()->RECV == ioInfo->serverMode
-			|| businessService->getIocpService()->RECV_MORE == ioInfo->serverMode) { // Recv 가 기본 동작
+		else if (businessService.getIocpService()->RECV == ioInfo->serverMode
+			|| businessService.getIocpService()->RECV_MORE == ioInfo->serverMode) { // Recv 가 기본 동작
 			// 데이터 읽기 과정
 			short remainByte = min(bytesTrans, BUF_SIZE); // 초기 Remain Byte
 			bool recvMore = false;
@@ -179,12 +181,12 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 			queue<JOB_DATA> packetQueue;
 
 			while (true) {
-				remainByte = businessService->PacketReading(ioInfo, remainByte);
+				remainByte = businessService.PacketReading(ioInfo, remainByte);
 				// 다 받은 후 정상 로직
 				// DataCopy내에서 사용 메모리 전부 반환
 				if (remainByte >= 0) {
 					JOB_DATA jobData;
-					jobData.msg = businessService->DataCopy(ioInfo, &jobData.nowStatus,
+					jobData.msg = businessService.DataCopy(ioInfo, &jobData.nowStatus,
 						&jobData.direction);
 					jobData.socket = sock;
 					packetQueue.push(jobData);
@@ -197,7 +199,7 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 					break;
 				}
 				else if (remainByte < 0) { // 받은 패킷 부족 || 헤더 다 못받음 -> 더받아야함
-					businessService->getIocpService()->RecvMore(
+					businessService.getIocpService()->RecvMore(
 						sock, ioInfo); // 패킷 더받기 & 기본 ioInfo 보존
 
 					recvMore = true;
@@ -217,11 +219,11 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 			// jobQueue에 한번에 Insert
 
 			if (!recvMore) { // recvMore이 아니면 해당 socket은 받기 동작을 계속한다
-				businessService->getIocpService()->Recv(
+				businessService.getIocpService()->Recv(
 					sock); // 패킷 더받기
 			}
 		}
-		else if (businessService->getIocpService()->SEND == ioInfo->serverMode) { // Send 끝난경우
+		else if (businessService.getIocpService()->SEND == ioInfo->serverMode) { // Send 끝난경우
 
 			CharPool* charPool = CharPool::getInstance();
 
@@ -235,6 +237,7 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 			MPool* mp = MPool::getInstance();
 			mp->Free(ioInfo);
 		}
+		
 	}
 	return 0;
 }
@@ -265,8 +268,6 @@ int main(int argc, char* argv[]) {
 	MPool* mp = MPool::getInstance(); // 메모리풀 초기화 지점
 	CharPool* charPool = CharPool::getInstance(); // 메모리풀 초기화 지점
 
-	businessService = new BusinessService::BusinessService();
-
 	// Thread Pool Client에게 패킷 받는 동작
 	for (int i = 0; i < process; i++) {
 		// 만들어진 HandleThread를 hComPort CP 오브젝트에 할당한다
@@ -294,23 +295,21 @@ int main(int argc, char* argv[]) {
 		int addrLen = sizeof(clntAdr);
 		hClientSock = accept(hServSock, (SOCKADDR*)&clntAdr, &addrLen);
 
-		businessService->InsertLiveSocket(hClientSock, clntAdr);
+		businessService.InsertLiveSocket(hClientSock, clntAdr);
 
 		// Completion Port 와 accept한 소켓 연결
 		CreateIoCompletionPort((HANDLE)hClientSock, hComPort,
 			(DWORD)hClientSock, 0);
 
-		businessService->getIocpService()->Recv(hClientSock);
+		businessService.getIocpService()->Recv(hClientSock);
 
 		// 초기 접속 메세지 Send
 		string str = "접속을 환영합니다!\n";
 		str += loginBeforeMessage;
 
-		businessService->getIocpService()->SendToOneMsg(
+		businessService.getIocpService()->SendToOneMsg(
 			str.c_str(), hClientSock, ClientStatus::STATUS_LOGOUT);
 	}
 	
-	delete businessService;
-
 	return 0;
 }

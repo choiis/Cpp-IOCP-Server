@@ -9,7 +9,7 @@
 #include <direct.h>
 #include <list>
 #include <string>
-#include <unordered_map>
+#include <map>
 #include "common.h"
 
 namespace FileService {
@@ -33,7 +33,7 @@ public:
 	virtual ~FileService();
 	// UDP파일전송
 	// 메서드밖에서 방 리스트에대한 동기화 
-	void SendToRoomFile(FILE* fp, const string& dir, shared_ptr<ROOM_DATA> second, const unordered_map<SOCKET, string>& liveSocket);
+	void SendToRoomFile(FILE* fp, const string& dir, shared_ptr<ROOM_DATA> second, const map<SOCKET, string>& liveSocket);
 	// 채팅방에서의 파일 입출력 케이스
 	string  RecvFile(SOCKET sock);
 };
