@@ -74,7 +74,7 @@ private:
 	// sqlQueue 동기화
 	mutex sqlCs;
 	// sendQueue 동기화
-	CRITICAL_SECTION sendCs;
+	mutex sendCs;
 
 	// 접속끊어진 socket은 Send에서 제외
 	// UDP 전송 Case때문에 각 클라이언트 socket의 IP도 저장한다

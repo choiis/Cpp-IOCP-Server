@@ -17,8 +17,8 @@ Socket::Socket() {
 	servAdr.sin_family = PF_INET;
 	servAdr.sin_addr.s_addr = htonl(INADDR_ANY); // INADDR_ANY뜻은 어느 IP에서 접속이 와도 요청 수락한다는 뜻
 	servAdr.sin_port = htons(atoi(SERVER_PORT));
-
-	if (bind(hServSock, (SOCKADDR*)&servAdr, sizeof(servAdr)) == SOCKET_ERROR) {
+	
+	if (_WINSOCK2API_::bind(hServSock, (SOCKADDR*)&servAdr, sizeof(servAdr)) == SOCKET_ERROR) {
 		cout << "bind() error!" << endl;
 		exit(1);
 	}

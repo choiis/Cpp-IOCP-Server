@@ -51,9 +51,7 @@ unsigned WINAPI SendThread(void *arg) {
 unsigned WINAPI WorkThread(void *arg) {
 
 	while (true) {
-#if defined(DEBUG)
-		_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF)
-#endif
+
 		if (!jobQueue.empty()) {
 
 			queue<JOB_DATA> copyJobQueue;

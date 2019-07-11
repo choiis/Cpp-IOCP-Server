@@ -18,8 +18,6 @@ namespace BusinessService {
 
 		InitializeCriticalSectionAndSpinCount(&roomCs, 2000);
 
-		InitializeCriticalSectionAndSpinCount(&sendCs, 2000);
-
 		iocpService = new IocpService::IocpService();
 
 		fileService = new FileService::FileService();
@@ -41,8 +39,6 @@ namespace BusinessService {
 		DeleteCriticalSection(&userCs);
 
 		DeleteCriticalSection(&roomCs);
-
-		DeleteCriticalSection(&sendCs);
 
 	}
 
@@ -91,74 +87,79 @@ namespace BusinessService {
 	void BusinessService::Sendwork() {
 
 		Send_DATA sendData;
-		EnterCriticalSection(&sendCs);
 		if (!sendQueue.empty()) {
 
-			sendData = sendQueue.front();
-			sendQueue.pop();
-			LeaveCriticalSection(&sendCs);
-			switch (sendData.direction)
+			queue<Send_DATA> copySendQueue;
 			{
-			case SendTo::SEND_ME: // Send to One
-				iocpService->SendToOneMsg(sendData.msg.c_str(), sendData.mySocket, sendData.status);
-				break;
-			case SendTo::SEND_ROOM: // Send to Room
-				// LockCount가 있을 때 => 방 리스트가 살아있을 때
-			{
-				EnterCriticalSection(&roomCs);
-				auto iter = roomMap.find(sendData.roomName);
-				shared_ptr<ROOM_DATA> second = nullptr;
-				if (iter != roomMap.end()) {
-					second = iter->second;
-				}
-				LeaveCriticalSection(&roomCs);
-
-				if (second != nullptr && second->listCs.LockCount == -1) {
-					EnterCriticalSection(&second->listCs);
-					iocpService->SendToRoomMsg(sendData.msg.c_str(), second->userList, sendData.status);
-					LeaveCriticalSection(&second->listCs);
-				}
-				break;
+				lock_guard<mutex> guard(sendCs);  // Lock최소화
+				copySendQueue = sendQueue;
+				queue<Send_DATA> emptyQueue; // 빈 큐
+				swap(sendQueue, emptyQueue); // 빈 큐로 바꿔치기
 			}
-			case SendTo::SEND_FILE:
-			{
-				string dir = sendData.msg;
 
-				FILE* fp = fopen(dir.c_str(), "rb");
-				if (fp == NULL) {
-					cout << "파일 열기 실패" << endl;
-					 return;
+			while (!copySendQueue.empty()) { // 여러 패킷 데이터 한꺼번에 처리
+				Send_DATA sendData = copySendQueue.front();
+				copySendQueue.pop();
+				
+				switch (sendData.direction)
+				{
+				case SendTo::SEND_ME: // Send to One
+					iocpService->SendToOneMsg(sendData.msg.c_str(), sendData.mySocket, sendData.status);
+					break;
+				case SendTo::SEND_ROOM: // Send to Room
+					// LockCount가 있을 때 => 방 리스트가 살아있을 때
+				{
+					EnterCriticalSection(&roomCs);
+					auto iter = roomMap.find(sendData.roomName);
+					shared_ptr<ROOM_DATA> second = nullptr;
+					if (iter != roomMap.end()) {
+						second = iter->second;
+					}
+					LeaveCriticalSection(&roomCs);
+
+					if (second != nullptr) {
+						lock_guard<recursive_mutex> guard(second->listCs);
+						iocpService->SendToRoomMsg(sendData.msg.c_str(), second->userList, sendData.status);
+					}
+					break;
 				}
+				case SendTo::SEND_FILE:
+				{
+					 string dir = sendData.msg;
+					 FILE* fp = fopen(dir.c_str(), "rb");
+					if (fp == NULL) {
+						cout << "파일 열기 실패" << endl;
+						return;
+					}
 
-				int idx;
-				while ((idx = dir.find("/")) != -1) { // 파일명만 추출
-					 dir.erase(0, idx + 1);
+					int idx;
+					while ((idx = dir.find("/")) != -1) { // 파일명만 추출
+						dir.erase(0, idx + 1);
+					}
+
+					EnterCriticalSection(&roomCs);
+					auto iter = roomMap.find(sendData.roomName);
+					shared_ptr<ROOM_DATA> second = nullptr;
+					if (iter != roomMap.end()) {
+						second = iter->second;
+					}
+					LeaveCriticalSection(&roomCs);
+
+					// 각 방의 CS
+					if (second != nullptr) {
+						lock_guard<recursive_mutex> guard(second->listCs);
+						fileService->SendToRoomFile(fp, dir, second, liveSocket);
+					}
+					fclose(fp);
+					break;
 				}
-
-				EnterCriticalSection(&roomCs);
-				auto iter = roomMap.find(sendData.roomName);
-				shared_ptr<ROOM_DATA> second = nullptr;
-				if (iter != roomMap.end()) {
-					second = iter->second;
+				default:
+					break;
 				}
-				LeaveCriticalSection(&roomCs);
-
-				// 각 방의 CS
-				if (second != nullptr && second->listCs.LockCount == -1) {
-					EnterCriticalSection(&second->listCs);
-					fileService->SendToRoomFile(fp, dir, second, liveSocket);
-					LeaveCriticalSection(&second->listCs);
-				}
-
-				fclose(fp);
-				break;
-			}
-			default:
-				break;
 			}
 		}
 		else {
-			LeaveCriticalSection(&sendCs);
+		
 			Sleep(1);
 		}
 
@@ -181,9 +182,11 @@ namespace BusinessService {
 			sendData.roomName = roomName;
 			sendData.status = status;
 		}
-		EnterCriticalSection(&sendCs);
-		sendQueue.push(sendData);
-		LeaveCriticalSection(&sendCs);
+		{
+			lock_guard<mutex> guard(sendCs);
+			sendQueue.push(sendData);
+		}
+	
 	}
 
 	// 초기 로그인
@@ -268,15 +271,15 @@ namespace BusinessService {
 					roomName = string(userMap.find(sock)->second.roomName);
 
 					// 개별 퇴장시에는 Room List 개별 Lock만
-					EnterCriticalSection(&roomMap.find(roomName)->second->listCs);
-					// 나갈때는 즉시 BoardCast
-					iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
+					{
+						lock_guard<recursive_mutex> guard(roomMap.find(roomName)->second->listCs);
+						// 나갈때는 즉시 BoardCast
+						iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
 
-					roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
-					LeaveCriticalSection(&roomMap.find(roomName)->second->listCs);
-					// Room List 개별 Lock만
-
-
+						roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
+						// Room List 개별 Lock만
+					}
+					
 					EnterCriticalSection(&userCs); // 로그인된 사용자정보 변경 Lock
 					strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
 					userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // 상태 변경
@@ -286,7 +289,6 @@ namespace BusinessService {
 					EnterCriticalSection(&roomCs);
 					if (roomMap.find(roomName) != roomMap.end()) {
 						if ((roomMap.find(roomName)->second)->userList.size() == 0) { // 방인원 0명이면 방 삭제
-							DeleteCriticalSection(&roomMap.find(roomName)->second->listCs);
 							roomMap.erase(roomName);
 						}
 					}
@@ -305,9 +307,7 @@ namespace BusinessService {
 	// 로그인 이전 로직처리
 	// 세션값 없을 때 로직
 	void BusinessService::StatusLogout(SOCKET sock, Direction direction, const char *message) {
-#if defined(DEBUG)
-		_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF)
-#endif
+
 		string msg = "";
 
 		if (direction == Direction::USER_MAKE) { // 1번 계정생성
@@ -422,9 +422,7 @@ namespace BusinessService {
 	// 대기실에서의 로직 처리
 	// 세션값 있음
 	void BusinessService::StatusWait(SOCKET sock, ClientStatus status, Direction direction, const char *message) {
-#if defined(DEBUG)
-		_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF)
-#endif
+
 		string name = userMap.find(sock)->second.userName;
 		string id = userMap.find(sock)->second.userId;
 		string msg = string(message);
@@ -447,7 +445,6 @@ namespace BusinessService {
 				shared_ptr<ROOM_DATA> roomData = make_shared<ROOM_DATA>();
 				list<SOCKET> chatList;
 				chatList.push_back(sock);
-				InitializeCriticalSection(&roomData->listCs);
 				// 방 리스트별 CS객체 Init
 				roomData->userList = chatList;
 				roomMap[msg] = roomData;
@@ -498,10 +495,12 @@ namespace BusinessService {
 						NAME_SIZE); // 로그인 유저 정보 변경
 					userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
 					LeaveCriticalSection(&userCs);
-					EnterCriticalSection(&roomMap.find(msg)->second->listCs); // 방의 Lock
-					//방이 있으니까 유저를 insert
-					roomMap.find(msg)->second->userList.push_back(sock);
-					LeaveCriticalSection(&roomMap.find(msg)->second->listCs); // 방의 Lock
+					{
+						lock_guard<recursive_mutex> guard(roomMap.find(msg)->second->listCs);
+						//방이 있으니까 유저를 insert
+						roomMap.find(msg)->second->userList.push_back(sock);
+					}
+					 // 방의 Lock
 
 					string sendMsg = name;
 					sendMsg += " 님이 입장하셨습니다. ";
@@ -666,11 +665,11 @@ namespace BusinessService {
 								userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
 								string nick = userMap.find(sock)->second.userName;
 								LeaveCriticalSection(&userCs);
-								EnterCriticalSection(&roomMap.find(roomName)->second->listCs); // 방의 Lock
-								//방이 있으니까 유저를 insert
-								roomMap.find(roomName)->second->userList.push_back(sock);
-								LeaveCriticalSection(&roomMap.find(roomName)->second->listCs); // 방의 Lock
-
+								{
+									lock_guard<recursive_mutex> guard(roomMap.find(msg)->second->listCs);
+									roomMap.find(roomName)->second->userList.push_back(sock);
+								}// 방의 Lock
+								
 								string sendMsg = "";
 								sendMsg.append(nick);
 								sendMsg += " 님이 입장하셨습니다. ";
@@ -814,9 +813,7 @@ namespace BusinessService {
 	// 채팅방에서의 로직 처리
 	// 세션값 있음
 	void BusinessService::StatusChat(SOCKET sock, ClientStatus status, Direction direction, const char *message) {
-#if defined(DEBUG)
-		_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF)
-#endif
+
 		string name;
 		string msg;
 		string id;
@@ -836,12 +833,13 @@ namespace BusinessService {
 			roomName = string(userMap.find(sock)->second.roomName);
 
 			// 개별 퇴장시에는 Room List 개별 Lock만
-			EnterCriticalSection(&roomMap.find(roomName)->second->listCs);
-			// 나갈때는 즉시 BoardCast
-			iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
+			{
+				lock_guard<recursive_mutex> guard(roomMap.find(roomName)->second->listCs);
+				// 나갈때는 즉시 BoardCast
+				iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
 
-			roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
-			LeaveCriticalSection(&roomMap.find(roomName)->second->listCs);
+				roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
+			}
 			// Room List 개별 Lock만
 
 			msg = waitRoomMessage;
@@ -856,7 +854,6 @@ namespace BusinessService {
 			EnterCriticalSection(&roomCs);
 			if (roomMap.find(roomName) != roomMap.end()) {
 				if ((roomMap.find(roomName)->second)->userList.size() == 0) { // 방인원 0명이면 방 삭제
-					DeleteCriticalSection(&roomMap.find(roomName)->second->listCs);
 					roomMap.erase(roomName);
 				}
 			}
@@ -1119,12 +1116,14 @@ namespace BusinessService {
 					roomName = string(userMap.find(sock)->second.roomName);
 
 					// 개별 퇴장시에는 Room List 개별 Lock만
-					EnterCriticalSection(&roomMap.find(roomName)->second->listCs);
-					// 나갈때는 즉시 BoardCast
-					iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
+					{
+						lock_guard<recursive_mutex> guard(roomMap.find(roomName)->second->listCs);
+						// 나갈때는 즉시 BoardCast
+						iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
 
-					roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
-					LeaveCriticalSection(&roomMap.find(roomName)->second->listCs);
+						roomMap.find(roomName)->second->userList.remove(sock); // 나가는 사람 정보 out
+
+					}				
 					// Room List 개별 Lock만
 
 
@@ -1137,7 +1136,6 @@ namespace BusinessService {
 					EnterCriticalSection(&roomCs);
 					if (roomMap.find(roomName) != roomMap.end()) {
 						if ((roomMap.find(roomName)->second)->userList.size() == 0) { // 방인원 0명이면 방 삭제
-							DeleteCriticalSection(&roomMap.find(roomName)->second->listCs);
 							roomMap.erase(roomName);
 						}
 					}

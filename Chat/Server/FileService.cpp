@@ -21,8 +21,8 @@ namespace FileService {
 		local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 		local_addr.sin_port = htons(atoi(UDP_PORT)); // UDP port
 
-		if (bind(udpSocket, (SOCKADDR *)&local_addr, sizeof(local_addr)) == SOCKET_ERROR) {
-			cout << "bind() error!" << endl;
+		if (_WINSOCK2API_::bind(udpSocket, (SOCKADDR *)&local_addr, sizeof(local_addr)) == SOCKET_ERROR) {
+			cout << "udp bind() error!" << endl;
 		}
 	}
 

@@ -10,7 +10,7 @@
 
 #include <winsock2.h>
 #include <list>
-
+#include <mutex>
 using namespace std;
 #define BUF_SIZE 4096
 #define NAME_SIZE 20
@@ -111,7 +111,7 @@ typedef struct { // buffer info
 // 비동기 통신에 필요한 구조체
 typedef struct { // buffer info
 	list<SOCKET> userList;
-	CRITICAL_SECTION listCs;
+	recursive_mutex listCs;
 } ROOM_DATA, *P_ROOM_DATA;
 
 
