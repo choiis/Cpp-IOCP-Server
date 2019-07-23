@@ -10,14 +10,14 @@
 
 #include <iostream>
 #include <winsock2.h>
-#include <concurrent_queue.h>
+#include "ConcurrentQueue.h"
 #include "common.h"
 
 class MPool {
 private:
 	char* data;
 	DWORD len;
-	Concurrency::concurrent_queue<char*> poolQueue;
+	ConcurrentQueue<char*> poolQueue;
 	MPool();
 	~MPool();
 	MPool(const MPool& mpool) = delete;

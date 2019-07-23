@@ -246,9 +246,7 @@ int main(int argc, char* argv[]) {
 	HANDLE hComPort;
 	SYSTEM_INFO sysInfo;
 
-	Socket socket;
-	
-	SOCKET hServSock = socket.getSocket();
+	SOCKET hServSock = Socket::GetInstance()->getSocket();
 
 	SetConsoleTextAttribute(
 		GetStdHandle(STD_OUTPUT_HANDLE), 10);

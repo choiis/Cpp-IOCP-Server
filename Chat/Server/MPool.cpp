@@ -20,9 +20,8 @@ MPool::MPool() {
 MPool* MPool::instance = nullptr;
 
 MPool::~MPool() {
-	char *popPoint;
 	while (!poolQueue.empty()) {
-		poolQueue.try_pop(popPoint);
+		poolQueue.top();
 	}
 	free(data);
 }
@@ -36,9 +35,7 @@ LPPER_IO_DATA MPool::Malloc() {
 			poolQueue.push(nextP + (sizeof(PER_IO_DATA)* j));
 		}
 	}
-	char* pointer;
-	poolQueue.try_pop(pointer);
-	return (LPPER_IO_DATA) pointer;
+	return (LPPER_IO_DATA) poolQueue.top();
 }
 // 메모리풀 반환
 void MPool::Free(LPPER_IO_DATA freePoint) { // 반환한 포인터의 idx를 원상복구

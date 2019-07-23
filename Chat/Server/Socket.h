@@ -7,20 +7,29 @@
 #include "common.h"
 
 using namespace std;
-
+#define MAKE_SINGLETON(className)				\
+	public:												\
+		static className* GetInstance()					\
+		{												\
+			static className instance;					\
+			return &instance;							\
+		}												\
+														\
+	private:											\
+		~className() = default;							\
+		className(const className& rhs) = delete;		\
+		className(const className&& rhs) = delete;		\
+		void operator=(const className& rhs) = delete;	\
+		void operator=(const className&& rhs) = delete;
+		
 class Socket {
 private:
 	WSADATA wsaData;
 	SOCKET hServSock;
 	SOCKADDR_IN servAdr;
-
-	Socket(const Socket& rhs);
-	Socket& operator=(const Socket& rhs);
-public:
 	Socket();
-
-	virtual ~Socket();
-
+	MAKE_SINGLETON(Socket);
+public:
 	SOCKET& getSocket();
 }; 
 #endif /* DAO_H_ */

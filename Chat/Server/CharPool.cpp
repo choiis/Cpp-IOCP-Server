@@ -20,9 +20,8 @@ CharPool::CharPool() {
 CharPool* CharPool::instance = nullptr;
 
 CharPool::~CharPool() {
-	char *popPoint;
 	while (!poolQueue.empty()) {
-		poolQueue.try_pop(popPoint);
+		poolQueue.top();
 	}
 	free(data);
 }
@@ -37,10 +36,8 @@ char* CharPool::Malloc() {
 			poolQueue.push(nextP + (BLOCK_SIZE* j));
 		}
 	}
-	char* pointer;
-	poolQueue.try_pop(pointer);
 	
-	return pointer;
+	return poolQueue.top();
 }
 // 메모리풀 반환
 void CharPool::Free(char* freePoint) { // 반환한 포인터의 idx를 원상복구
