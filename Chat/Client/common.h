@@ -15,45 +15,57 @@ using namespace std;
 #define FILE_BUF_SIZE 32768
 
 // CP가 Recv 받을때 READ Send 받을때 WRITE
-#define READ 6
-#define WRITE 7
-#define READ_MORE 8
+enum Operation {
+	READ = 6,
+	WRITE,
+	READ_MORE
+};
 
 // 클라이언트 상태 정보 => 서버에서 보관할것
-#define STATUS_INIT 0
-#define STATUS_LOGOUT 1
-#define STATUS_WAITING 2
-#define STATUS_CHATTIG 3
-#define STATUS_WHISPER 4
-#define STATUS_FILE_SEND 5
+// 클라이언트 상태 정보 => 서버에서 보관할것
+enum ClientStatus {
+	STATUS_INIT,
+	STATUS_LOGOUT,
+	STATUS_WAITING,
+	STATUS_CHATTIG,
+	STATUS_WHISPER,
+	STATUS_FILE_SEND,
+	STATUS_MAX
+};
 
-// 서버에게 지시 사항
-#define USER_MAKE 1
-#define USER_ENTER 2
+enum Direction {
+	// 서버에게 지시 사항
+	USER_MAKE = 1,
+	USER_ENTER,
+	// 서버에 올 지시 사항
+	ROOM_MAKE,
+	ROOM_ENTER,
+	ROOM_OUT,
+	WHISPER,
+	ROOM_INFO,
+	ROOM_USER_INFO,
+	FRIEND_INFO,
+	FRIEND_ADD,
+	FRIEND_GO,
+	FRIEND_DELETE,
+	LOG_OUT,
+	FILE_SEND,
+	MAX,
+};
 
-// 서버에 올 지시 사항
-#define ROOM_MAKE 3
-#define ROOM_ENTER 4
-#define ROOM_OUT 5
-#define WHISPER 6
-#define ROOM_INFO 7
-#define ROOM_USER_INFO 8
-#define FRIEND_INFO 9
-#define FRIEND_ADD 10
-#define FRIEND_GO 11
-#define FRIEND_DELETE 12
-#define LOG_OUT 13
-#define FILE_SEND 14
 // 로그인 중복 방지
-#define NOW_LOGOUT 0
-#define NOW_LOGIN 1
+enum LoginCheck {
+	NOW_LOGOUT,
+	NOW_LOGIN,
+	NOW_LOG_MAX
+};
 
 #define loginBeforeMessage "1.계정생성 2.로그인하기 3.종료 4.콘솔지우기"
 #define waitRoomMessage	"1.방 정보 보기 2.방 만들기 3.방 입장하기 4.유저 정보 5.친구 정보 6.친구 관리 7.귓속말 8.로그아웃 9.콘솔지우기"
 #define errorMessage "잘못된 명령어 입니다"
 #define chatRoomMessage  "나가시려면 \\out을 콘솔지우기는 \\clear를 친구추가는 \\add 닉네임을 파일전송은\\send를 입력하세요"
 
-#define SERVER_IP "10.10.55.62"
+#define SERVER_IP "172.30.1.23"
 #define SERVER_PORT "1234"
 #define UDP_PORT "1236"
 #define UDP_PORT_SEND "2222"

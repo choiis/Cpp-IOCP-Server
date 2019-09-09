@@ -289,7 +289,7 @@ unsigned WINAPI SendMsgThread(void *arg) {
 			clientQueue->pushMakeQueue(info);
 		}
 		else { // Send안할 땐 실행중지
-			Sleep(1);
+			Sleep(100);
 		}
 	}
 	return 0;
@@ -319,7 +319,7 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 			LeaveCriticalSection(&userCs);
 
 			if (cStatus == STATUS_LOGOUT) {
-				Sleep(1);
+				Sleep(100);
 				int randNum3 = (rand() % 2);
 				if (randNum3 % 2 == 1) {
 					int randNum1 = (rand() % 2);
@@ -397,7 +397,7 @@ unsigned WINAPI MakeMsgThread(void *arg) {
 			clientQueue->pushSendQueue(info);
 		}
 		else { // Make안할 땐 실행중지
-			Sleep(1);
+			Sleep(100);
 		}
 	}
 	return 0;
