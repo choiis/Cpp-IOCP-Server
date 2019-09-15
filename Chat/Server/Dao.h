@@ -56,5 +56,7 @@ public:
 	RelationVo selectOneFriend(const RelationVo& vo);
 
 	int DeleteRelation(const RelationVo& vo);
+
+	int InsertFiles(const LogVo& vo);
 };
 #endif /* DAO_H_ */

@@ -50,6 +50,10 @@ LogVo::LogVo() : Vo() {
 	strncpy(this->msg, "", 512);
 	this->status = 0;
 	this->direction = 0;
+	this->bytes = 0;
+	strncpy(this->filename, "", 100);
+	strncpy(this->nickname, "", 20);
+	this->fileDir = "";
 }
 LogVo::~LogVo() {
 	// TODO Auto-generated destructor stub

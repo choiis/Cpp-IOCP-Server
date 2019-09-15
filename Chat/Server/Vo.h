@@ -8,7 +8,8 @@
 #ifndef VO_H_
 #define VO_H_
 
-#include <string.h>
+#include <string>
+using namespace std;
 
 class Vo {
 private:
@@ -70,6 +71,10 @@ private:
 	char msg[512];
 	int status;
 	int direction;
+	char filename[100];
+	char nickname[20];
+	long bytes;
+	string fileDir;
 public:
 	LogVo();
 
@@ -109,6 +114,38 @@ public:
 
 	int getDirection() const{
 		return direction;
+	}
+
+	void setFilename(const char* filename) {
+		strncpy(this->filename, filename, 20);
+	}
+
+	const char* getFilename() const {
+		return filename;
+	}
+
+	void setNickname(const char* nickname) {
+		strncpy(this->nickname, nickname, 20);
+	}
+
+	const char* getNickname() const {
+		return nickname;
+	}
+
+	void setBytes(long bytes) {
+		this->bytes = bytes;
+	}
+
+	long getBytes() const {
+		return bytes;
+	}
+
+	void setFileDir(const string& fileDir) {
+		this->fileDir = fileDir;
+	}
+
+	string getFileDir() const {
+		return fileDir;
 	}
 };
 

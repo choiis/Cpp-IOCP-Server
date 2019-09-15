@@ -10,6 +10,11 @@
 namespace FileService {
 
 	FileService::FileService() {
+
+		if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+			cout << "WSAStartup() error!" << endl;
+			exit(1);
+		}
 		udpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
 		udpSendSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -21,8 +26,12 @@ namespace FileService {
 		local_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 		local_addr.sin_port = htons(atoi(UDP_PORT)); // UDP port
 
+
 		if (_WINSOCK2API_::bind(udpSocket, (SOCKADDR *)&local_addr, sizeof(local_addr)) == SOCKET_ERROR) {
-			cout << "udp bind() error!" << endl;
+			cout << "UDP bind() error!" << endl;
+		}
+		else {
+			cout << "UDP Ready" << endl;
 		}
 	}
 
@@ -31,6 +40,8 @@ namespace FileService {
 		closesocket(udpSocket);
 
 		closesocket(udpSendSocket);
+
+		WSACleanup();
 	}
 
 	// UDP파일전송
@@ -78,7 +89,7 @@ namespace FileService {
 	}
 
 	// 채팅방에서의 파일 입출력 케이스
-	string FileService::RecvFile(SOCKET sock) {
+	LogVo FileService::RecvFile(SOCKET sock, const string& username) {
 
 		SOCKADDR_IN client_addr;
 
@@ -112,8 +123,14 @@ namespace FileService {
 			}
 			fwrite(buf, sizeof(char), readBytes, fp);
 		}
+		cout << "fileName " << fileName << "보낸사람 " << username << " 파일크기 " << ftell(fp) << " Bytes" << endl;
+		LogVo vo;
+		vo.setFileDir(string(fileDir));
+		vo.setFilename(fileName);
+		vo.setNickName(username.c_str());
+		vo.setBytes(ftell(fp));
 		fclose(fp);
 		// 내부에서 닫기
-		return string(fileDir);
+		return vo;
 	}
 }

@@ -30,6 +30,12 @@ Socket::Socket() {
 		exit(1);
 	}
 }
+Socket::~Socket() {
+	
+	closesocket(hServSock);
+
+	WSACleanup();
+}
 
 SOCKET& Socket::getSocket() {
 	return hServSock;

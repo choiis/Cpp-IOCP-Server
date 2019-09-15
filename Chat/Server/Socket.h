@@ -16,7 +16,6 @@ using namespace std;
 		}												\
 														\
 	private:											\
-		~className() = default;							\
 		className(const className& rhs) = delete;		\
 		className(const className&& rhs) = delete;		\
 		void operator=(const className& rhs) = delete;	\
@@ -31,5 +30,6 @@ private:
 	MAKE_SINGLETON(Socket);
 public:
 	SOCKET& getSocket();
+	virtual ~Socket();
 }; 
 #endif /* DAO_H_ */

@@ -331,3 +331,25 @@ int Dao::DeleteRelation(const RelationVo& vo) {
 
 	return result;
 }
+
+// File전송 정보 insert
+int Dao::InsertFiles(const LogVo& vo) {
+	lock_guard<mutex> guard(this->lock);
+	res = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+
+	char query[512] = "insert into cso_filerecv  values(? , ? , getdate() , ?)";
+
+	int relation = vo.getBytes();; // relation이 1 친구관계 2차단
+
+	SQLBindParameter(hStmt, 1, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getNickName(), sizeof(vo.getNickName()), NULL);
+	SQLBindParameter(hStmt, 2, SQL_PARAM_INPUT, SQL_C_CHAR, SQL_VARCHAR, 20, 0, (SQLCHAR*)vo.getFilename(), sizeof(vo.getFilename()), NULL);
+	SQLBindParameter(hStmt, 3, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &relation, 0, NULL);
+
+	SQLPrepare(hStmt, (SQLCHAR*)query, SQL_NTS);
+
+	res = SQLExecute(hStmt);
+	int result = res;
+	SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+
+	return result;
+}

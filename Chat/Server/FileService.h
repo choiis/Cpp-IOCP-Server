@@ -2,7 +2,6 @@
 #ifndef FILESERVICE_H_
 #define FILESERVICE_H_
 
-#include <winsock2.h>
 #include <memory>
 #include <algorithm>
 #include <iostream>
@@ -11,6 +10,7 @@
 #include <string>
 #include <map>
 #include "common.h"
+#include "Dao.h"
 
 namespace FileService {
 
@@ -35,7 +35,7 @@ public:
 	// 메서드밖에서 방 리스트에대한 동기화 
 	void SendToRoomFile(FILE* fp, const string& dir, shared_ptr<ROOM_DATA> second, const map<SOCKET, string>& liveSocket);
 	// 채팅방에서의 파일 입출력 케이스
-	string  RecvFile(SOCKET sock);
+	LogVo RecvFile(SOCKET sock, const string& username);
 };
 
 }/* namespace Service */

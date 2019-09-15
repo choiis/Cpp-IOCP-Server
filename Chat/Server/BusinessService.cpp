@@ -905,12 +905,15 @@ namespace BusinessService {
 	// 채팅방에서의 파일 입출력 케이스
 	void BusinessService::StatusFile(SOCKET sock) {
 
-		string fileDir = fileService->RecvFile(sock);
+		LogVo vo = fileService->RecvFile(sock, string(userMap.find(sock)->second.userName));
+
+		string fileDir = vo.getFileDir();
 		// SendQueue에 Insert
 		InsertSendQueue(SendTo::SEND_ROOM, "", userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
 		// 여기서부터 UDP BroadCast
 		InsertSendQueue(SendTo::SEND_FILE, fileDir.c_str(), userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
 
+		dao->InsertFiles(vo);
 	}
 
 	// 클라이언트에게 받은 데이터 복사후 구조체 해제
