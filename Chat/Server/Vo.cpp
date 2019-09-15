@@ -64,6 +64,10 @@ LogVo::LogVo(const LogVo& vo) : Vo(vo) {
 	strncpy(this->msg, vo.msg, 512);
 	this->status = vo.status;
 	this->direction = vo.direction;
+	this->bytes = vo.bytes;
+	strncpy(this->filename, vo.filename, 100);
+	strncpy(this->nickname, vo.nickname, 20);
+	this->fileDir = vo.fileDir;
 }
 // 대입연산자
 LogVo& LogVo::operator=(const LogVo& vo) {
@@ -72,6 +76,10 @@ LogVo& LogVo::operator=(const LogVo& vo) {
 	strncpy(this->msg, vo.msg, 512);
 	this->status = vo.status;
 	this->direction = vo.direction;
+	this->bytes = vo.bytes;
+	strncpy(this->filename, vo.filename, 100);
+	strncpy(this->nickname, vo.nickname, 20);
+	this->fileDir = vo.fileDir;
 	return *this;
 }
 
