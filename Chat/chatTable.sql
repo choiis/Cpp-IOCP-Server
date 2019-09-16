@@ -68,3 +68,6 @@ bytes bitint not null
 alter table cso_filerecv
 add constraint pk_cso_filerecv primary key(nickname, regdate);
 
+CREATE nonclustered index idx_filerecv_1
+on cso_filerecv(regdate, nickname)
+

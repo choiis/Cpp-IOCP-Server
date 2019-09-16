@@ -74,7 +74,6 @@ private:
 	char filename[100];
 	char nickname[20];
 	long bytes;
-	string fileDir;
 public:
 	LogVo();
 
@@ -140,13 +139,6 @@ public:
 		return bytes;
 	}
 
-	void setFileDir(const string& fileDir) {
-		this->fileDir = fileDir;
-	}
-
-	string getFileDir() const {
-		return fileDir;
-	}
 };
 
 class RelationVo : public Vo {

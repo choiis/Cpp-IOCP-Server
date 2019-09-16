@@ -30,9 +30,19 @@ private:
 	SQLRETURN res;
 	// idMap µø±‚»≠
 	mutex lock;
+	Dao();
+
+	Dao(const Dao& rhs) = delete;
+	Dao(const Dao&& rhs) = delete;
+	void operator=(const Dao& rhs) = delete;
+	void operator=(const Dao&& rhs) = delete;
 
 public:
-	Dao();
+	static Dao* GetInstance() {
+		static Dao instance;
+		return &instance;
+	}
+
 	virtual ~Dao();
 
 	UserVo selectUser(UserVo& vo);

@@ -53,7 +53,6 @@ LogVo::LogVo() : Vo() {
 	this->bytes = 0;
 	strncpy(this->filename, "", 100);
 	strncpy(this->nickname, "", 20);
-	this->fileDir = "";
 }
 LogVo::~LogVo() {
 	// TODO Auto-generated destructor stub
@@ -67,7 +66,6 @@ LogVo::LogVo(const LogVo& vo) : Vo(vo) {
 	this->bytes = vo.bytes;
 	strncpy(this->filename, vo.filename, 100);
 	strncpy(this->nickname, vo.nickname, 20);
-	this->fileDir = vo.fileDir;
 }
 // 대입연산자
 LogVo& LogVo::operator=(const LogVo& vo) {
@@ -79,7 +77,6 @@ LogVo& LogVo::operator=(const LogVo& vo) {
 	this->bytes = vo.bytes;
 	strncpy(this->filename, vo.filename, 100);
 	strncpy(this->nickname, vo.nickname, 20);
-	this->fileDir = vo.fileDir;
 	return *this;
 }
 

@@ -89,7 +89,7 @@ namespace FileService {
 	}
 
 	// 채팅방에서의 파일 입출력 케이스
-	LogVo FileService::RecvFile(SOCKET sock, const string& username) {
+	string FileService::RecvFile(SOCKET sock, const string& username) {
 
 		SOCKADDR_IN client_addr;
 
@@ -125,12 +125,12 @@ namespace FileService {
 		}
 		cout << "fileName " << fileName << "보낸사람 " << username << " 파일크기 " << ftell(fp) << " Bytes" << endl;
 		LogVo vo;
-		vo.setFileDir(string(fileDir));
 		vo.setFilename(fileName);
 		vo.setNickName(username.c_str());
 		vo.setBytes(ftell(fp));
+		Dao::GetInstance()->InsertFiles(vo);
 		fclose(fp);
 		// 내부에서 닫기
-		return vo;
+		return string(fileDir);
 	}
 }

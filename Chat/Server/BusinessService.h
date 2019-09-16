@@ -49,8 +49,6 @@ namespace BusinessService {
 
 class BusinessService {
 private:
-	// DB connection Object
-	Dao* dao;
 	// 중복로그인 방지에 쓰일 구조체
 	unordered_set<string> idSet;
 	// 서버에 접속한 유저 자료 저장

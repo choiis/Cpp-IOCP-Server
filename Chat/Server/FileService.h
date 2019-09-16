@@ -35,7 +35,7 @@ public:
 	// 메서드밖에서 방 리스트에대한 동기화 
 	void SendToRoomFile(FILE* fp, const string& dir, shared_ptr<ROOM_DATA> second, const map<SOCKET, string>& liveSocket);
 	// 채팅방에서의 파일 입출력 케이스
-	LogVo RecvFile(SOCKET sock, const string& username);
+	string RecvFile(SOCKET sock, const string& username);
 };
 
 }/* namespace Service */

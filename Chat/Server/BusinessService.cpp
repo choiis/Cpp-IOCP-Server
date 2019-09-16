@@ -22,12 +22,9 @@ namespace BusinessService {
 
 		fileService = new FileService::FileService();
 
-		dao = new Dao();
 	}
 
 	BusinessService::~BusinessService() {
-
-		delete dao;
 
 		delete iocpService;
 
@@ -61,16 +58,16 @@ namespace BusinessService {
 				switch (sqlData.direction)
 				{
 				case SqlWork::UPDATE_USER: // ID정보 update
-					dao->UpdateUser(sqlData.vo);
+					Dao::GetInstance()->UpdateUser(sqlData.vo);
 					break;
 				case SqlWork::INSERT_LOGIN: // 로그인 정보 insert
-					dao->InsertLogin(sqlData.vo);
+					Dao::GetInstance()->InsertLogin(sqlData.vo);
 					break;
 				case SqlWork::INSERT_DIRECTION: // 지시 로그 insert
-					dao->InsertDirection(sqlData.vo);
+					Dao::GetInstance()->InsertDirection(sqlData.vo);
 					break;
 				case SqlWork::INSERT_CHATTING: // 채팅 로그 insert
-					dao->InsertChatting(sqlData.vo);
+					Dao::GetInstance()->InsertChatting(sqlData.vo);
 					break;
 				default:
 					break;
@@ -328,7 +325,7 @@ namespace BusinessService {
 
 				UserVo vo;
 				vo.setUserId(sArr[0]);
-				vo = move(dao->selectUser(vo));
+				vo = move(Dao::GetInstance()->selectUser(vo));
 
 				if (strcmp(vo.getUserId(), "") == 0) { // ID 중복체크 => 계정 없음
 
@@ -336,7 +333,7 @@ namespace BusinessService {
 					vo.setPassword(sArr[1]);
 					vo.setNickName(sArr[2]);
 
-					dao->InsertUser(vo);
+					Dao::GetInstance()->InsertUser(vo);
 
 					msg.append(sArr[0]);
 					msg.append("계정 생성 완료!\n");
@@ -372,7 +369,7 @@ namespace BusinessService {
 
 				UserVo vo;
 				vo.setUserId(sArr[0]);
-				vo = move(dao->selectUser(vo));
+				vo = move(Dao::GetInstance()->selectUser(vo));
 
 				if (strcmp(vo.getUserId(), "") == 0) { // 계정 없음
 
@@ -568,7 +565,7 @@ namespace BusinessService {
 
 			RelationVo vo;
 			vo.setUserId(id.c_str());
-			vector<RelationVo> vec = move(dao->selectFriends(vo));
+			vector<RelationVo> vec = move(Dao::GetInstance()->selectFriends(vo));
 
 			string sendMsg = "친구 정보 리스트";
 			if (vec.size() == 0) {
@@ -622,7 +619,7 @@ namespace BusinessService {
 			vo.setUserId(id.c_str());
 			vo.setRelationto(msg.c_str());
 			// 요청 친구 정보 select
-			RelationVo vo2 = move(dao->selectOneFriend(vo));
+			RelationVo vo2 = move(Dao::GetInstance()->selectOneFriend(vo));
 
 			if (strcmp(vo2.getNickName(), "") == 0) { // 친구정보 못찾음
 				string sendMsg = "친구정보를 찾을 수 없습니다\n";
@@ -699,7 +696,7 @@ namespace BusinessService {
 			vo.setRelationcode(1);
 			vo.setNickName(msg.c_str());
 
-			int res = dao->DeleteRelation(vo);
+			int res = Dao::GetInstance()->DeleteRelation(vo);
 			if (res != -1) { // 삭제 성공
 				string sendMsg = msg;
 				sendMsg += " 님을 친구 삭제했습니다";
@@ -905,15 +902,13 @@ namespace BusinessService {
 	// 채팅방에서의 파일 입출력 케이스
 	void BusinessService::StatusFile(SOCKET sock) {
 
-		LogVo vo = fileService->RecvFile(sock, string(userMap.find(sock)->second.userName));
+		string fileDir = move(fileService->RecvFile(sock, string(userMap.find(sock)->second.userName)));
 
-		string fileDir = vo.getFileDir();
 		// SendQueue에 Insert
 		InsertSendQueue(SendTo::SEND_ROOM, "", userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
 		// 여기서부터 UDP BroadCast
 		InsertSendQueue(SendTo::SEND_FILE, fileDir.c_str(), userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
 
-		dao->InsertFiles(vo);
 	}
 
 	// 클라이언트에게 받은 데이터 복사후 구조체 해제
@@ -1044,7 +1039,7 @@ namespace BusinessService {
 	void BusinessService::AddFriend(SOCKET sock, const string& msg, const string& id, ClientStatus status) {
 		RelationVo vo;
 		vo.setNickName(msg.c_str());
-		RelationVo vo2 = move(dao->findUserId(vo)); // 아이디 존재 여부 검색
+		RelationVo vo2 = move(Dao::GetInstance()->findUserId(vo)); // 아이디 존재 여부 검색
 
 		string sendMsg;
 
@@ -1056,7 +1051,7 @@ namespace BusinessService {
 
 			vo2.setUserId(id.c_str());
 			vo2.setRelationcode(1);
-			int res = dao->InsertRelation(vo2);
+			int res = Dao::GetInstance()->InsertRelation(vo2);
 			if (res != -1) { // 친추 성공
 				sendMsg = msg;
 				sendMsg.append("님이 친구추가 되었습니다");
