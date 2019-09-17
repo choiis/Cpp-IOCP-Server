@@ -45,6 +45,7 @@ Dao::Dao() {
 	else {
 		std::cout << "DB connection fail" << std::endl;
 	}
+	conf.close(); // 파일닫기 필수 
 }
 
 Dao::~Dao() {
