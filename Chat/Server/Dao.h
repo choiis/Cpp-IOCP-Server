@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <fstream>
 #include "Vo.h"
 
 using namespace std;

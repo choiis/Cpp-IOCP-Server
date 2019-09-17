@@ -260,7 +260,7 @@ int main(int argc, char* argv[]) {
 
 	int process = sysInfo.dwNumberOfProcessors;
 	cout << "Server CPU num : " << process << endl;
-
+	Dao::GetInstance(); // SQL Server Connection 초기화 지점
 	MPool* mp = MPool::getInstance(); // 메모리풀 초기화 지점
 	CharPool* charPool = CharPool::getInstance(); // 메모리풀 초기화 지점
 

@@ -16,9 +16,28 @@ Dao::Dao() {
 	// 연결 핸들러 할당
 	SQLAllocHandle(SQL_HANDLE_DBC, hEnv, &hDbc);
 
+	string SqlConnection = "conf/SqlConnection.properties";
+
+	ifstream conf(SqlConnection);
+	
+	if (!conf.is_open()) {
+		cout << "File conf read error!" << endl;
+		exit(1);
+	}
+
+	char serverIp[32];
+	char serverPort[32];
+	char serverDB[32];
+	char serverUser[32];
+	char serverPassword[32];
+	conf >> serverIp >> serverPort >> serverDB >> serverUser >> serverPassword;
+
+	char connect[1024];
+	sprintf(connect, "DRIVER={SQL Server};SERVER=%s, %s; DATABASE=%s; UID=%s; PWD=%s", serverIp, serverPort, serverDB, serverUser, serverPassword);
+	cout << "connect " << connect << endl;
 	// DB connection
 	res = SQLDriverConnect(hDbc, NULL,
-		(SQLCHAR*)"DRIVER={SQL Server};SERVER=172.30.1.12, 1433; DATABASE=server_DB; UID=23460; PWD=as1324..;",
+		(SQLCHAR*) connect,
 		SQL_NTS, NULL, 1024, NULL, SQL_DRIVER_NOPROMPT); //접속 조건 입력. (성공 = 1, 실패 = -1 리턴)
 	if (res == 1) {
 		std::cout << "DB connection success" << std::endl;
