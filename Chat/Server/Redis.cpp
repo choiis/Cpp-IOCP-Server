@@ -65,13 +65,12 @@ void Redis::Zincr(const string& key, const string& value) {
 
 vector<RankVo> Redis::Zrevrange(const string& key, int num) {
 
-	{
-		lock_guard<mutex> guard(this->lock);
+	lock_guard<mutex> guard(this->lock);
 
-		char query[512];
-		sprintf(query, "zrevrange %s 0 %d withscores", key.c_str(), num);
-		resp = (redisReply*)redisCommand(conn, query);// 명령어
-	}
+	char query[512];
+	sprintf(query, "zrevrange %s 0 %d withscores", key.c_str(), num);
+	resp = (redisReply*)redisCommand(conn, query);// 명령어
+
 	std::vector<RankVo> vec;
 
 	for (size_t i = 0; i < resp->elements; i+=2)
