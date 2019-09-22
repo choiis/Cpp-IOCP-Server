@@ -1,11 +1,12 @@
 
-#ifndef BUSINESSSERVICE_H_
-#define BUSINESSSERVICE_H_
+#ifndef REDIS_H_
+#define REDIS_H_
 
 #include <hiredis.h>
 #include <string>
 #include <vector>
 #include <mutex>
+#include <iostream>
 #include "RankVo.h"
 
 #pragma once

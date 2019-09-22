@@ -10,12 +10,12 @@ Redis::Redis() {
 
 	if ((NULL != conn) && conn->err) {
 		// error
-		printf("error : %s\n", conn->errstr);
+		cout << "error : " << conn->errstr << endl;
+		cout << "Redis Server connection Error" << endl;
 		redisFree(conn);
-		exit(-1);
 	}
 	else if (NULL == conn) {
-		exit(-1);
+		cout << "Redis Server connection Error" << endl;
 	}
 };
 
