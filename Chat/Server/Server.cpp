@@ -141,7 +141,7 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 	while (true) {
 
 		bool success = GetQueuedCompletionStatus(hComPort, (LPDWORD)&bytesTrans,
-			(LPDWORD)&sock, (LPOVERLAPPED*)&ioInfo, INFINITE);
+			(PULONG_PTR)&sock, (LPOVERLAPPED*)&ioInfo, INFINITE);
 
 		if (bytesTrans == 0 && !success) { // 접속 끊김 콘솔 강제 종료
 

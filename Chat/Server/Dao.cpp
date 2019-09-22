@@ -78,7 +78,7 @@ UserVo Dao::selectUser(UserVo& vo){
 	char userid[10];
 	char password[10];
 	char nickname[20];
-	SQLINTEGER num1, num2, num3;
+	SQLLEN num1, num2, num3;
 
 	SQLBindCol(hStmt, 1, SQL_C_CHAR, userid, sizeof(userid), &num1);
 	SQLBindCol(hStmt, 2, SQL_C_CHAR, password, sizeof(password), &num2);
@@ -236,7 +236,7 @@ RelationVo Dao::findUserId(const RelationVo& vo) {
 
 	char userid[10];
 	char nickname[20];
-	SQLINTEGER num1, num2;
+	SQLLEN num1, num2;
 
 	SQLBindCol(hStmt, 1, SQL_C_CHAR, userid, sizeof(userid), &num1);
 	SQLBindCol(hStmt, 2, SQL_C_CHAR, nickname, sizeof(nickname), &num2);
@@ -271,7 +271,7 @@ vector<RelationVo> Dao::selectFriends(const RelationVo& vo) {
 	char userid[10];
 	char relationto[10];
 	char nickname[20];
-	SQLINTEGER num1, num2, num3;
+	SQLLEN num1, num2, num3;
 
 	SQLBindCol(hStmt, 1, SQL_C_CHAR, userid, sizeof(userid), &num1);
 	SQLBindCol(hStmt, 2, SQL_C_CHAR, relationto, sizeof(relationto), &num2);
@@ -309,7 +309,7 @@ RelationVo Dao::selectOneFriend(const RelationVo& vo) {
 	char userid[20];
 	char relationto[20];
 	char nickname[20];
-	SQLINTEGER num1, num2, num3;
+	SQLLEN num1, num2, num3;
 
 	SQLBindCol(hStmt, 1, SQL_C_CHAR, userid, sizeof(userid), &num1);
 	SQLBindCol(hStmt, 2, SQL_C_CHAR, relationto, sizeof(relationto), &num2);
