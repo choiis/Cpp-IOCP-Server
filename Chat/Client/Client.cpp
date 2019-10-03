@@ -296,7 +296,10 @@ unsigned WINAPI SendMsgThread(void *arg) {
 			else if (msg.compare("8") == 0) { // 로그아웃
 				direction = LOG_OUT;
 			}
-			else if (msg.compare("9") == 0) { // 콘솔지우기
+			else if (msg.compare("9") == 0) { // 인기도조회
+				direction = USER_GOOD_INFO;
+			}
+			else if (msg.compare("10") == 0) { // 콘솔지우기
 				system("cls");
 				cout << waitRoomMessage << endl;
 				continue;
@@ -307,6 +310,11 @@ unsigned WINAPI SendMsgThread(void *arg) {
 				system("cls");
 				cout << chatRoomMessage << endl;
 				continue;
+			}
+			else if (msg.find("\\good") != -1) { // 인기도
+				cout << "인기도를 줄 닉네임을 입력하세요" << endl;
+				getline(cin, msg);
+				direction = USER_GOOD;
 			}
 			else if (msg.find("\\send") != -1) { // 파일전송
 				cout << "파일 경로를 입력해 주세요" << endl;

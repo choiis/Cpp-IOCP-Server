@@ -19,8 +19,8 @@
 #include "IocpService.h"
 #include "FileService.h"
 #include "Dao.h"
+#include "Redis.h"
 
-// #pragma comment(lib, "Dao.h") 
 
 // SQLwork에게 전달할 정보들
 enum class SqlWork{

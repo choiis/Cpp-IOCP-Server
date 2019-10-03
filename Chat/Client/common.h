@@ -50,6 +50,8 @@ enum Direction {
 	FRIEND_DELETE,
 	LOG_OUT,
 	FILE_SEND,
+	USER_GOOD,
+	USER_GOOD_INFO,
 	MAX,
 };
 
@@ -61,9 +63,9 @@ enum LoginCheck {
 };
 
 #define loginBeforeMessage "1.계정생성 2.로그인하기 3.종료 4.콘솔지우기"
-#define waitRoomMessage	"1.방 정보 보기 2.방 만들기 3.방 입장하기 4.유저 정보 5.친구 정보 6.친구 관리 7.귓속말 8.로그아웃 9.콘솔지우기"
+#define waitRoomMessage	"1.방 정보 보기 2.방 만들기 3.방 입장하기 4.유저 정보 5.친구 정보 6.친구 관리 7.귓속말 8.로그아웃 9.인기도 조회 10.콘솔지우기"
 #define errorMessage "잘못된 명령어 입니다"
-#define chatRoomMessage  "나가시려면 \\out을 콘솔지우기는 \\clear를 친구추가는 \\add 닉네임을 파일전송은\\send를 입력하세요"
+#define chatRoomMessage  "나가시려면 \\out을 콘솔지우기는 \\clear를 친구추가는 \\add 닉네임을 파일전송은\\send를 유저인기도는\\good을 입력하세요"
 
 #define SERVER_IP "172.30.1.23"
 #define SERVER_PORT "1234"
