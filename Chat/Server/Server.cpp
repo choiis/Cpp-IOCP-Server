@@ -207,7 +207,7 @@ unsigned WINAPI RecvThread(LPVOID pCompPort) {
 
 			{
 				lock_guard<mutex> guard(queueCs);
-				packetCnt.fetch_add(packetQueue.size());
+				packetCnt.fetch_add(static_cast<int>(packetQueue.size()));
 				while (!packetQueue.empty()) { // packetQueue -> jobQueue 
 					JOB_DATA jobData = packetQueue.front();
 					packetQueue.pop();

@@ -130,7 +130,7 @@ namespace BusinessService {
 					}
 
 					int idx;
-					while ((idx = dir.find("/")) != -1) { // 파일명만 추출
+					while ((idx = static_cast<int>(dir.find("/"))) != -1) { // 파일명만 추출
 						dir.erase(0, idx + 1);
 					}
 
@@ -204,7 +204,7 @@ namespace BusinessService {
 		// 세션정보 insert
 		this->userMap[sock] = userInfo;
 		cout << "START user : " << nickName << endl;
-		cout << "현재 접속 인원 수 : " << userMap.size() << endl;
+		cout << "Now login user count : " << userMap.size() << endl;
 		LeaveCriticalSection(&userCs);
 
 		LogVo vo; // DB SQL문에 필요한 Data
@@ -293,7 +293,7 @@ namespace BusinessService {
 				}
 				EnterCriticalSection(&userCs);
 				userMap.erase(sock); // 접속 소켓 정보 삭제
-				cout << "현재 접속 인원 수 : " << userMap.size() << endl;
+				cout << "Now login user count : " << userMap.size() << endl;
 				LeaveCriticalSection(&userCs);
 
 			}
@@ -428,7 +428,7 @@ namespace BusinessService {
 
 			// 유효성 검증 먼저
 			EnterCriticalSection(&roomCs);
-			int cnt = roomMap.count(msg);
+			size_t cnt = roomMap.count(msg);
 
 			if (cnt != 0) { // 방이름 중복
 				LeaveCriticalSection(&roomCs);
@@ -458,7 +458,7 @@ namespace BusinessService {
 
 				msg += " 방이 개설되었습니다.";
 				msg += chatRoomMessage;
-				// cout << "현재 서버의 방 갯수 : " << roomMap.size() << endl;
+				cout << "Now server room count : " << roomMap.size() << endl;
 				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_CHATTIG);
 
 			}
@@ -777,7 +777,7 @@ namespace BusinessService {
 
 			EnterCriticalSection(&userCs);
 			userMap.erase(sock); // 접속 소켓 정보 삭제
-			cout << "현재 접속 인원 수 : " << userMap.size() << endl;
+			cout << "Now login user count : " << userMap.size() << endl;
 			LeaveCriticalSection(&userCs);
 
 			string sendMsg = loginBeforeMessage;
@@ -1057,7 +1057,7 @@ namespace BusinessService {
 	bool BusinessService::SessionCheck(SOCKET sock) {
 		// userMap접근을 위한CS
 		EnterCriticalSection(&this->userCs);
-		int cnt = userMap.count(sock);
+		size_t cnt = userMap.count(sock);
 		LeaveCriticalSection(&this->userCs);
 
 		if (cnt > 0) {
@@ -1185,7 +1185,7 @@ namespace BusinessService {
 
 				EnterCriticalSection(&userCs);
 				userMap.erase(sock); // 접속 소켓 정보 삭제
-				cout << "현재 접속 인원 수 : " << userMap.size() << endl;
+				cout << "Now login user count : " << userMap.size() << endl;
 				LeaveCriticalSection(&userCs);
 
 				break;
@@ -1195,7 +1195,7 @@ namespace BusinessService {
 
 	void BusinessService::CallCnt(SOCKET socket, const DWORD& cnt) {
 		char msg[30];
-		sprintf(msg, "{\"packet\":%d , \"cnt\":%d}", cnt, userMap.size());
+		sprintf(msg, "{\"packet\":%d , \"cnt\":%zd}", cnt, userMap.size());
 		InsertSendQueue(SendTo::SEND_ME, msg, "", socket, ClientStatus::STATUS_INIT);
 	}
 
