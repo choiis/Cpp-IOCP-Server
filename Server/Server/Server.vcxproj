@@ -101,7 +101,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>..\..\..\..\library\hiredis-master;$(IncludePath)</IncludePath>
     <LibraryPath>..\..\..\..\library\hiredis-master\lib\x64;$(LibraryPath)</LibraryPath>
-    <OutDir>D:\Cpp\Source\Server\Release</OutDir>
+    <OutDir>$(SolutionDir)\Release</OutDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
