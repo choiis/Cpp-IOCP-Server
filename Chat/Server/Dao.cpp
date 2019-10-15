@@ -65,7 +65,7 @@ Dao::~Dao() {
 }
 
 // IDÁ¤º¸ select
-UserVo Dao::selectUser(UserVo& vo){
+UserVo& Dao::selectUser(UserVo& vo){
 
 	lock_guard<mutex> guard(this->lock);
 

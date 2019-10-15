@@ -28,6 +28,16 @@ Vo& Vo::operator=(const Vo& vo) {
 	return *this;
 }
 
+Vo::Vo(const Vo&& vo) {
+	strncpy(this->userId, vo.userId, 20);
+	strncpy(this->nickName, vo.nickName, 20);
+}
+
+void Vo::operator=(const Vo&& vo) {
+	strncpy(this->userId, vo.userId, 20);
+	strncpy(this->nickName, vo.nickName, 20);
+}
+
 UserVo::UserVo() : Vo() {
 	strncpy(this->password, "", 10);
 }
@@ -43,6 +53,15 @@ UserVo& UserVo::operator=(const UserVo& vo) {
 	Vo::operator=(vo);
 	strncpy(this->password, vo.password, 10);
 	return *this;
+}
+
+UserVo::UserVo(const UserVo&& vo) : Vo(vo) {
+	strncpy(this->password, vo.password, 10);
+}
+
+void UserVo::operator=(const UserVo&& vo) {
+	Vo::operator=(vo);
+	strncpy(this->password, vo.password, 10);
 }
 
 LogVo::LogVo() : Vo() {
@@ -80,6 +99,27 @@ LogVo& LogVo::operator=(const LogVo& vo) {
 	return *this;
 }
 
+LogVo::LogVo(const LogVo&& vo) : Vo(vo) {
+	strncpy(this->roomName, vo.roomName, 20);
+	strncpy(this->msg, vo.msg, 512);
+	this->status = vo.status;
+	this->direction = vo.direction;
+	this->bytes = vo.bytes;
+	strncpy(this->filename, vo.filename, 100);
+	strncpy(this->nickname, vo.nickname, 20);
+}
+
+void LogVo::operator=(const LogVo&& vo) {
+	Vo::operator=(vo);
+	strncpy(this->roomName, vo.roomName, 20);
+	strncpy(this->msg, vo.msg, 512);
+	this->status = vo.status;
+	this->direction = vo.direction;
+	this->bytes = vo.bytes;
+	strncpy(this->filename, vo.filename, 100);
+	strncpy(this->nickname, vo.nickname, 20);
+}
+
 
 RelationVo::RelationVo() : Vo() {
 	strncpy(this->relationto, "", 20);
@@ -99,4 +139,15 @@ RelationVo& RelationVo::operator=(const RelationVo& vo) {
 	strncpy(this->relationto, vo.relationto, 20);
 	this->relationcode = vo.relationcode;
 	return *this;
+}
+
+RelationVo::RelationVo(const RelationVo&& vo) : Vo(vo) {
+	strncpy(this->relationto, vo.relationto, 20);
+	this->relationcode = vo.relationcode;
+}
+
+void RelationVo::operator=(const RelationVo&& vo) {
+	Vo::operator=(vo);
+	strncpy(this->relationto, vo.relationto, 20);
+	this->relationcode = vo.relationcode;
 }

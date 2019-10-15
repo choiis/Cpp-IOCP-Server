@@ -21,6 +21,10 @@ protected:
 	Vo(const Vo& vo);
 
 	Vo& operator=(const Vo& vo);
+
+	Vo(const Vo&& vo);
+
+	void operator=(const Vo&& vo);
 public:
 
 	virtual ~Vo();
@@ -54,6 +58,10 @@ public:
 
 	UserVo& operator=(const UserVo& vo);
 
+	UserVo(const UserVo&& vo);
+
+	void operator=(const UserVo&& vo);
+
 	virtual ~UserVo();
 
 	void setPassword(const char* password) {
@@ -80,6 +88,10 @@ public:
 	LogVo(const LogVo& vo);
 
 	LogVo& operator=(const LogVo& vo);
+
+	LogVo(const LogVo&& vo);
+
+	void operator=(const LogVo&& vo);
 
 	virtual ~LogVo();
 
@@ -151,6 +163,10 @@ public:
 	RelationVo(const RelationVo& vo);
 
 	RelationVo& operator=(const RelationVo& vo);
+
+	RelationVo(const RelationVo&& vo);
+
+	void operator=(const RelationVo&& vo);
 
 	virtual ~RelationVo();
 
