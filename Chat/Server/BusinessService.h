@@ -39,11 +39,6 @@ typedef struct { // socket info
 	ClientStatus status;
 } PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
 
-// 비동기 통신에 필요한 구조체
-typedef struct { // buffer info
-	SqlWork direction;
-	LogVo vo;
-} SQL_DATA, *P_SQL_DATA;
 
 namespace BusinessService {
 
@@ -56,7 +51,6 @@ private:
 	// 서버의 방 정보 저장
 	map<string, shared_ptr<ROOM_DATA>> roomMap;
 
-	queue<SQL_DATA> sqlQueue;
 
 	queue<Send_DATA> sendQueue;
 	// 임계영역에 필요한 객체
@@ -69,8 +63,7 @@ private:
 	CRITICAL_SECTION userCs;
 	// roomMap 동기화
 	CRITICAL_SECTION roomCs;
-	// sqlQueue 동기화
-	mutex sqlCs;
+	
 	// sendQueue 동기화
 	mutex sendCs;
 
@@ -87,13 +80,25 @@ private:
 	BusinessService(const BusinessService& rhs) = delete;
 	void operator=(const BusinessService& rhs) = delete;
 	BusinessService(BusinessService&& rhs) = delete;
+	// 로그인 이전 로직처리
+	// 세션값 없을 때 로직
+	void StatusLogout(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+	// 대기실에서의 로직 처리
+	// 세션값 있음
+	void StatusWait(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+	// 채팅방에서의 로직 처리
+	// 세션값 있음
+	void StatusChat(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+	void (BusinessService::*func[4])(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 public:
+
+	void callFuncPointer(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+
 	// 생성자
 	BusinessService();
 	// 소멸자
 	virtual ~BusinessService();
-	// SQLThread에서 동작할 부분
-	void SQLwork();
+	
 	// SendThread에서 동작할 부분
 	void Sendwork();
 	// InsertSendQueue 공통화
@@ -103,17 +108,7 @@ public:
 	void InitUser(const char *id, SOCKET sock ,const char *nickName);
 	// 접속 강제종료 로직
 	void ClientExit(SOCKET sock);
-	// 로그인 이전 로직처리
-	// 세션값 없을 때 로직
-	void StatusLogout(SOCKET sock, Direction direction, const char *message);
-	// 대기실에서의 로직 처리
-	// 세션값 있음
-	void StatusWait(SOCKET sock, ClientStatus status, Direction direction, const char *message);
-	// 채팅방에서의 로직 처리
-	// 세션값 있음
-	void StatusChat(SOCKET sock, ClientStatus status, Direction direction, const char *message);
-	// 채팅방에서의 파일 입출력 케이스
-	void StatusFile(SOCKET sock);
+
 	// 클라이언트에게 받은 데이터 복사후 구조체 해제
 	string DataCopy(LPPER_IO_DATA ioInfo, ClientStatus *status, Direction *direction);
 	// 패킷 데이터 읽기

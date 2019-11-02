@@ -22,6 +22,10 @@ namespace BusinessService {
 
 		fileService = new FileService::FileService();
 
+
+		this->func[1] = &BusinessService::StatusLogout;
+		this->func[2] = &BusinessService::StatusWait;
+		this->func[3] = &BusinessService::StatusChat;
 	}
 
 	BusinessService::~BusinessService() {
@@ -39,47 +43,12 @@ namespace BusinessService {
 
 	}
 
-	void BusinessService::SQLwork() {
 
-		if (!sqlQueue.empty()) { // SQL insert 한번에
-			queue<SQL_DATA> copySqlQueue;
+	void BusinessService::callFuncPointer(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 
-			{
-				lock_guard<mutex> guard(sqlCs);  // Lock최소화
-				copySqlQueue = sqlQueue;
-				queue<SQL_DATA> emptyQueue; // 빈 큐
-				swap(sqlQueue, emptyQueue); // 빈 큐로 바꿔치기
-			}
-
-			while (!copySqlQueue.empty()) { // 여러 패킷 데이터 한꺼번에 처리
-				SQL_DATA sqlData = copySqlQueue.front();
-				copySqlQueue.pop();
-
-				switch (sqlData.direction)
-				{
-				case SqlWork::UPDATE_USER: // ID정보 update
-					Dao::GetInstance()->UpdateUser(sqlData.vo);
-					break;
-				case SqlWork::INSERT_LOGIN: // 로그인 정보 insert
-					Dao::GetInstance()->InsertLogin(sqlData.vo);
-					break;
-				case SqlWork::INSERT_DIRECTION: // 지시 로그 insert
-					Dao::GetInstance()->InsertDirection(sqlData.vo);
-					break;
-				case SqlWork::INSERT_CHATTING: // 채팅 로그 insert
-					Dao::GetInstance()->InsertChatting(sqlData.vo);
-					break;
-				default:
-					break;
-				}
-			}
-		}
-		else {
-			Sleep(1);
-		}
-
-	}
-
+		(this->*func[status])(sock, status, direction, message);
+	};
+	
 
 	void BusinessService::Sendwork() {
 
@@ -210,18 +179,10 @@ namespace BusinessService {
 		LogVo vo; // DB SQL문에 필요한 Data
 		vo.setUserId(userInfo.userId);
 		vo.setNickName(userInfo.userName);
-		{
-			lock_guard<mutex> guard(sqlCs);
-
-			SQL_DATA sqlData1, sqlData2;
-			sqlData1.vo = vo;
-			sqlData1.direction = SqlWork::UPDATE_USER;
-			sqlQueue.push(sqlData1); // 최근 로그인기록 업데이트
-			sqlData2.vo = vo;
-			sqlData2.direction = SqlWork::INSERT_LOGIN;
-			sqlQueue.push(sqlData2); // 로그인 DB에 기록
-		}
-
+		
+		Dao::GetInstance()->UpdateUser(vo);// 최근 로그인기록 업데이트
+		Dao::GetInstance()->InsertLogin(vo); // 로그인 DB에 기록
+		
 		msg = nickName;
 		msg.append("님 입장을 환영합니다!\n");
 		msg.append(waitRoomMessage);
@@ -303,7 +264,7 @@ namespace BusinessService {
 
 	// 로그인 이전 로직처리
 	// 세션값 없을 때 로직
-	void BusinessService::StatusLogout(SOCKET sock, Direction direction, const char *message) {
+	void BusinessService::StatusLogout(SOCKET sock, ClientStatus status, Direction direction, const char *message) {
 
 		string msg = "";
 
@@ -424,7 +385,10 @@ namespace BusinessService {
 		string id = userMap.find(sock)->second.userId;
 		string msg = string(message);
 		// 세션에서 이름 정보 리턴
-		if (direction == Direction::ROOM_MAKE) { // 새로운 방 만들때
+		if (direction == -1) {
+			return;
+		}
+		else if (direction == Direction::ROOM_MAKE) { // 새로운 방 만들때
 
 			// 유효성 검증 먼저
 			EnterCriticalSection(&roomCs);
@@ -809,15 +773,8 @@ namespace BusinessService {
 		vo.setMsg(message);
 		vo.setDirection(direction);
 		vo.setStatus(status);
-
-		{
-			lock_guard<mutex> guard(sqlCs);
-			SQL_DATA sqlData;
-			sqlData.vo = vo;
-			sqlData.direction = SqlWork::INSERT_DIRECTION;
-			sqlQueue.push(sqlData); // 지시 기록 insert
-		}
-
+		Dao::GetInstance()->InsertDirection(vo);  // 지시 기록 insert
+		
 	}
 
 	// 채팅방에서의 로직 처리
@@ -903,6 +860,14 @@ namespace BusinessService {
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_CHATTIG);
 			}
 		}
+		else if (direction == FILE_SEND) {
+			string fileDir = move(fileService->RecvFile(sock, string(userMap.find(sock)->second.userName)));
+
+			// SendQueue에 Insert
+			InsertSendQueue(SendTo::SEND_ROOM, "", userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
+			// 여기서부터 UDP BroadCast
+			InsertSendQueue(SendTo::SEND_FILE, fileDir.c_str(), userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
+		}
 		else { // 채팅방에서 채팅중
 
 			string sendMsg;
@@ -928,28 +893,9 @@ namespace BusinessService {
 			vo.setMsg(msg.c_str());
 			vo.setDirection(0);
 			vo.setStatus(0);
-
-			{
-				lock_guard<mutex> guard(sqlCs);
-
-				SQL_DATA sqlData;
-				sqlData.vo = vo;
-				sqlData.direction = SqlWork::INSERT_CHATTING;
-				sqlQueue.push(sqlData); // 대화 기록 업데이트
-			}
+			Dao::GetInstance()->InsertChatting(vo);
+		
 		}
-	}
-
-	// 채팅방에서의 파일 입출력 케이스
-	void BusinessService::StatusFile(SOCKET sock) {
-
-		string fileDir = move(fileService->RecvFile(sock, string(userMap.find(sock)->second.userName)));
-
-		// SendQueue에 Insert
-		InsertSendQueue(SendTo::SEND_ROOM, "", userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
-		// 여기서부터 UDP BroadCast
-		InsertSendQueue(SendTo::SEND_FILE, fileDir.c_str(), userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
-
 	}
 
 	// 클라이언트에게 받은 데이터 복사후 구조체 해제

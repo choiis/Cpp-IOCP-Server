@@ -3,7 +3,10 @@
 /Server/Server/Release
 /Server/x64/Release
 /Server/Server/x64
+/Server/Server/x64/Release/Server.tlog
 /BClient/.vs/
 /BClient/BClient/Release
 /Client/.vs/
 /Client/Client/Release
+*iobj
+*ipdb

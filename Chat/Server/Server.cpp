@@ -26,16 +26,6 @@ mutex queueCs;
 
 atomic<int> packetCnt = 0;
 
-// DB log insert를 담당하는 스레드
-unsigned WINAPI SQLThread(void *arg) {
-
-	while (true) {
-		businessService.SQLwork();
-	}
-
-	return 0;
-}
-
 // Send broadcast 담당하는 스레드
 unsigned WINAPI SendThread(void *arg) {
 
@@ -90,7 +80,8 @@ unsigned WINAPI WorkThread(void *arg) {
 						exit(EXIT_SUCCESS);
 					}
 					else { // 관리콘솔이 아니라 클라이언트에서 보낼 때
-						businessService.StatusLogout(jobData.socket, jobData.direction, jobData.msg.c_str());
+						businessService.callFuncPointer(jobData.socket, ClientStatus::STATUS_LOGOUT, jobData.direction, jobData.msg.c_str());
+
 					}
 					// 세션값 없음 => 로그인 이전 분기 끝
 				}
@@ -99,23 +90,7 @@ unsigned WINAPI WorkThread(void *arg) {
 					ClientStatus status = businessService.GetStatus(
 						jobData.socket);
 
-					if (status == ClientStatus::STATUS_WAITING && jobData.direction != -1) { // 대기실 케이스
-						// 대기실 처리 함수
-						businessService.StatusWait(jobData.socket, status, jobData.direction,
-							jobData.msg.c_str());
-					}
-					else if (status == ClientStatus::STATUS_CHATTIG) { // 채팅 중 케이스
-						// 채팅방 처리 함수
-
-						if (jobData.direction == Direction::FILE_SEND) { // 파일 전송 케이스
-							businessService.StatusFile(jobData.socket);
-						}
-						else { // 일반 채팅일때
-							businessService.StatusChat(jobData.socket, status, jobData.direction,
-								jobData.msg.c_str());
-						}
-
-					}
+					businessService.callFuncPointer(jobData.socket, status, jobData.direction, jobData.msg.c_str());
 				}
 			}
 		}
@@ -273,11 +248,6 @@ int main(int argc, char* argv[]) {
 	// Thread Pool 비지니스 로직 담당
 	for (int i = 0; i < 2 * process; i++) {
 		_beginthreadex(NULL, 0, WorkThread, NULL, 0, NULL);
-	}
-
-	// Thread Pool 로그 저장 SQL 실행에 쓰임
-	for (int i = 0; i < process; i++) {
-		_beginthreadex(NULL, 0, SQLThread, NULL, 0, NULL);
 	}
 
 	// Thread Pool BroadCast 해줌
