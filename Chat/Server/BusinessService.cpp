@@ -369,6 +369,10 @@ namespace BusinessService {
 			}
 
 		}
+		else if (direction == Direction::EXIT) {
+			// 정상종료
+			exit(EXIT_SUCCESS);
+		}
 		else { // 그외 명령어 입력
 			string sendMsg = errorMessage;
 			sendMsg += loginBeforeMessage;
@@ -999,27 +1003,19 @@ namespace BusinessService {
 		}
 	}
 
-	// 로그인 여부 체크 후 반환
-	bool BusinessService::SessionCheck(SOCKET sock) {
-		// userMap접근을 위한CS
-		EnterCriticalSection(&this->userCs);
-		size_t cnt = userMap.count(sock);
-		LeaveCriticalSection(&this->userCs);
-
-		if (cnt > 0) {
-			return true;
-		}
-		else {
-			return false;
-		}
-	}
-
 	// 클라이언트의 상태정보 반환
 	ClientStatus BusinessService::GetStatus(SOCKET sock) {
 		EnterCriticalSection(&this->userCs);
-		ClientStatus status = userMap.find(sock)->second.status;
-		LeaveCriticalSection(&this->userCs);
-		return status;
+		unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter = userMap.find(sock);
+		if (iter == userMap.end()) {
+			LeaveCriticalSection(&this->userCs);
+			return ClientStatus::STATUS_LOGOUT;
+		}
+		else {
+			ClientStatus status = userMap.find(sock)->second.status;
+			LeaveCriticalSection(&this->userCs);
+			return status;
+		}
 	}
 
 	// 친구추가 기능

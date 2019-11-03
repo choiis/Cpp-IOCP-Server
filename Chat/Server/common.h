@@ -12,9 +12,12 @@
 #include <list>
 #include <mutex>
 using namespace std;
+
 #define BUF_SIZE 4096
 #define NAME_SIZE 20
 #define FILE_BUF_SIZE 32768
+
+typedef unsigned short uint2;
 
 // 클라이언트 상태 정보 => 서버에서 보관할것
 enum ClientStatus {

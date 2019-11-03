@@ -22,7 +22,7 @@ void IocpService::SendToOneMsg(const char *msg, SOCKET mySock, ClientStatus stat
 
 	memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
 
-	unsigned short len = min((unsigned short)strlen(msg) + 11, BUF_SIZE); // 최대 보낼수 있는 내용 502Byte
+	uint2 len = min((uint2)strlen(msg) + 11, BUF_SIZE); // 최대 보낼수 있는 내용 502Byte
 	CharPool* charPool = CharPool::getInstance();
 	char* packet = charPool->Malloc(); // 512 Byte까지 보내기 가능
 
@@ -49,7 +49,7 @@ void IocpService::SendToRoomMsg(const char *msg, const list<SOCKET> &lists,
 		LPPER_IO_DATA ioInfo = mp->Malloc();
 
 		memset(&(ioInfo->overlapped), 0, sizeof(OVERLAPPED));
-		unsigned short len = min((unsigned short)strlen(msg) + 11, BUF_SIZE); // 최대 보낼수 있는 내용 502Byte
+		uint2 len = min((uint2)strlen(msg) + 11, BUF_SIZE); // 최대 보낼수 있는 내용 502Byte
 
 		char* packet = charPool->Malloc(); // 512 Byte까지 읽기 가능
 

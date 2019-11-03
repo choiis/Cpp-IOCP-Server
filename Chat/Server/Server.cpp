@@ -61,32 +61,16 @@ unsigned WINAPI WorkThread(void *arg) {
 					continue;
 				}
 
+				if (jobData.direction == Direction::CALLCOUNT) { // node js 서버로 전체 로그인된 유저수 
 
-				// DataCopy에서 받은 ioInfo 모두 free
-				if (!businessService.SessionCheck(jobData.socket)) { // 세션값 없음 => 로그인 이전 분기
-					// 로그인 이전 로직 처리
-
-					if (jobData.direction == Direction::CALLCOUNT) { // node js 서버로 전체 로그인된 유저수 
-
-						int cnt = packetCnt;
-						packetCnt = 0;
-						businessService.CallCnt(jobData.socket, cnt);
-					}
-					else if (jobData.direction == Direction::BAN) {
-						businessService.BanUser(jobData.socket, jobData.msg.substr(0, jobData.nowStatus).c_str());
-					}
-					else if (jobData.direction == Direction::EXIT) {
-						// 정상종료
-						exit(EXIT_SUCCESS);
-					}
-					else { // 관리콘솔이 아니라 클라이언트에서 보낼 때
-						businessService.callFuncPointer(jobData.socket, ClientStatus::STATUS_LOGOUT, jobData.direction, jobData.msg.c_str());
-
-					}
-					// 세션값 없음 => 로그인 이전 분기 끝
+					int cnt = packetCnt;
+					packetCnt = 0;
+					businessService.CallCnt(jobData.socket, cnt);
 				}
-				else { // 세션값 있을때 => 대기방 또는 채팅방 상태
-
+				else if (jobData.direction == Direction::BAN) {
+					businessService.BanUser(jobData.socket, jobData.msg.substr(0, jobData.nowStatus).c_str());
+				}
+				else { 
 					ClientStatus status = businessService.GetStatus(
 						jobData.socket);
 

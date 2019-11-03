@@ -113,8 +113,7 @@ public:
 	string DataCopy(LPPER_IO_DATA ioInfo, ClientStatus *status, Direction *direction);
 	// 패킷 데이터 읽기
 	short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans);
-	// 로그인 여부 체크 후 반환
-	bool SessionCheck(SOCKET sock);
+
 	// 클라이언트의 상태정보 반환
 	ClientStatus GetStatus(SOCKET sock);
 	// 친구추가 기능
