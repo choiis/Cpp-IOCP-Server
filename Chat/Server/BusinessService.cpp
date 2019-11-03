@@ -14,8 +14,6 @@ namespace BusinessService {
 		// 임계영역 Object 생성
 		InitializeCriticalSection(&idCs);
 
-		InitializeCriticalSection(&userCs);
-
 		InitializeCriticalSection(&roomCs);
 
 		iocpService = new IocpService::IocpService();
@@ -36,8 +34,6 @@ namespace BusinessService {
 
 		// 임계영역 Object 반환
 		DeleteCriticalSection(&idCs);
-
-		DeleteCriticalSection(&userCs);
 
 		DeleteCriticalSection(&roomCs);
 
@@ -169,12 +165,13 @@ namespace BusinessService {
 		strncpy(userInfo.roomName, "", NAME_SIZE);
 		strncpy(userInfo.userName, nickName, NAME_SIZE);
 
-		EnterCriticalSection(&userCs);
-		// 세션정보 insert
-		this->userMap[sock] = userInfo;
-		cout << "START user : " << nickName << endl;
-		cout << "Now login user count : " << userMap.size() << endl;
-		LeaveCriticalSection(&userCs);
+		{
+			lock_guard<mutex> guard(userCs);  // Lock최소화
+			// 세션정보 insert
+			this->userMap[sock] = userInfo;
+			cout << "START user : " << nickName << endl;
+			cout << "Now login user count : " << userMap.size() << endl;
+		}
 
 		LogVo vo; // DB SQL문에 필요한 Data
 		vo.setUserId(userInfo.userId);
@@ -238,10 +235,11 @@ namespace BusinessService {
 						// Room List 개별 Lock만
 					}
 					
-					EnterCriticalSection(&userCs); // 로그인된 사용자정보 변경 Lock
-					strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
-					userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // 상태 변경
-					LeaveCriticalSection(&userCs);
+					{
+						lock_guard<mutex> guard(userCs);  // Lock최소화
+						strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
+						userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // 상태 변경
+					}
 
 					// room Lock은 방 완전 삭제시 에만
 					EnterCriticalSection(&roomCs);
@@ -252,10 +250,11 @@ namespace BusinessService {
 					}
 					LeaveCriticalSection(&roomCs);
 				}
-				EnterCriticalSection(&userCs);
-				userMap.erase(sock); // 접속 소켓 정보 삭제
-				cout << "Now login user count : " << userMap.size() << endl;
-				LeaveCriticalSection(&userCs);
+				{
+					lock_guard<mutex> guard(userCs);  // Lock최소화
+					userMap.erase(sock); // 접속 소켓 정보 삭제
+					cout << "Now login user count : " << userMap.size() << endl;
+				}
 
 			}
 
@@ -417,12 +416,13 @@ namespace BusinessService {
 				LeaveCriticalSection(&roomCs);
 
 				// User의 상태 정보 바꾼다
-				EnterCriticalSection(&userCs);
-				strncpy((userMap.find(sock))->second.roomName, msg.c_str(),
-					NAME_SIZE);
-				(userMap.find(sock))->second.status =
-					ClientStatus::STATUS_CHATTIG;
-				LeaveCriticalSection(&userCs);
+				{
+					lock_guard<mutex> guard(userCs);  // Lock최소화
+					strncpy((userMap.find(sock))->second.roomName, msg.c_str(),
+						NAME_SIZE);
+					(userMap.find(sock))->second.status =
+						ClientStatus::STATUS_CHATTIG;
+				}
 
 				msg += " 방이 개설되었습니다.";
 				msg += chatRoomMessage;
@@ -455,11 +455,13 @@ namespace BusinessService {
 				LeaveCriticalSection(&roomCs); // 개별방 입장과 전체 방 Lock 따로
 
 				if (second != nullptr) { // 방이 살아있을 때 상태 업데이트 + list insert
-					EnterCriticalSection(&userCs);
-					strncpy(userMap.find(sock)->second.roomName, msg.c_str(),
-						NAME_SIZE); // 로그인 유저 정보 변경
-					userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
-					LeaveCriticalSection(&userCs);
+					
+					{
+						lock_guard<mutex> guard(userCs);  // Lock최소화
+						strncpy(userMap.find(sock)->second.roomName, msg.c_str(),
+							NAME_SIZE); // 로그인 유저 정보 변경
+						userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
+					}
 					{
 						lock_guard<recursive_mutex> guard(roomMap.find(msg)->second->listCs);
 						//방이 있으니까 유저를 insert
@@ -506,10 +508,11 @@ namespace BusinessService {
 		}
 		else if (direction == Direction::ROOM_USER_INFO) { // 유저 정보 요청시
 			string str = "유저 정보 리스트";
-
-			EnterCriticalSection(&userCs);
-			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap;
-			LeaveCriticalSection(&userCs);
+			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+			{
+				lock_guard<mutex> guard(userCs);  // Lock최소화
+				userCopyMap = userMap;
+			}
 			// userMap 계속 잡고 있지 않도록 깊은복사
 			unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
 			for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
@@ -526,6 +529,7 @@ namespace BusinessService {
 					str += (iter->second).roomName;
 				}
 			}
+
 			InsertSendQueue(SendTo::SEND_ME, str, "", sock, ClientStatus::STATUS_WAITING);
 
 		}
@@ -541,9 +545,11 @@ namespace BusinessService {
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 			}
 			else {
-				EnterCriticalSection(&userCs);
-				unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
-				LeaveCriticalSection(&userCs);
+				unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+				{
+					lock_guard<mutex> guard(userCs);  // Lock최소화
+					userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
+				}
 
 				// Select해서 가져온 유저의 친구정보
 				for (int i = 0; i < vec.size(); i++) {
@@ -595,9 +601,11 @@ namespace BusinessService {
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 			}
 			else {
-				EnterCriticalSection(&userCs);
-				unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
-				LeaveCriticalSection(&userCs);
+				unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+				{
+					lock_guard<mutex> guard(userCs);  // Lock최소화
+					userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
+				}
 
 				unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
 
@@ -624,12 +632,14 @@ namespace BusinessService {
 							LeaveCriticalSection(&roomCs); // 개별방 입장과 전체 방 Lock 따로
 
 							if (second != nullptr) { // 방이 살아있을 때 상태 업데이트 + list insert
-								EnterCriticalSection(&userCs);
-								strncpy(userMap.find(sock)->second.roomName, roomName.c_str(),
-									NAME_SIZE); // 로그인 유저 정보 변경
-								userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
-								string nick = userMap.find(sock)->second.userName;
-								LeaveCriticalSection(&userCs);
+								string nick;
+								{
+									lock_guard<mutex> guard(userCs);  // Lock최소화
+									strncpy(userMap.find(sock)->second.roomName, roomName.c_str(),
+										NAME_SIZE); // 로그인 유저 정보 변경
+									userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
+									nick = userMap.find(sock)->second.userName;
+								}
 								{
 									lock_guard<recursive_mutex> guard(roomMap.find(msg)->second->listCs);
 									roomMap.find(roomName)->second->userList.push_back(sock);
@@ -706,9 +716,11 @@ namespace BusinessService {
 				}
 				else {
 					bool find = false;
-					EnterCriticalSection(&userCs);
-					unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
-					LeaveCriticalSection(&userCs);
+					unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+					{
+						lock_guard<mutex> guard(userCs);  // Lock최소화
+						userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
+					}
 
 					unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
 
@@ -743,10 +755,11 @@ namespace BusinessService {
 			idSet.erase(userMap.find(sock)->second.userId); // 로그인 셋에서 제외
 			LeaveCriticalSection(&idCs);
 
-			EnterCriticalSection(&userCs);
-			userMap.erase(sock); // 접속 소켓 정보 삭제
-			cout << "Now login user count : " << userMap.size() << endl;
-			LeaveCriticalSection(&userCs);
+			{
+				lock_guard<mutex> guard(userCs);  // Lock최소화
+				userMap.erase(sock); // 접속 소켓 정보 삭제
+				cout << "Now login user count : " << userMap.size() << endl;
+			}
 
 			string sendMsg = loginBeforeMessage;
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_LOGOUT);
@@ -816,10 +829,11 @@ namespace BusinessService {
 			msg = waitRoomMessage;
 			InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
 
-			EnterCriticalSection(&userCs); // 로그인된 사용자정보 변경 Lock
-			strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
-			userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // 상태 변경
-			LeaveCriticalSection(&userCs);
+			{
+				lock_guard<mutex> guard(userCs);  // Lock최소화 // 로그인된 사용자정보 변경 Lock
+				strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
+				userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // 상태 변경
+			}
 
 			// room Lock은 방 완전 삭제시 에만
 			EnterCriticalSection(&roomCs);
@@ -841,9 +855,11 @@ namespace BusinessService {
 			// 방이름 임시 저장
 			string roomName = string(userMap.find(sock)->second.roomName);
 
-			EnterCriticalSection(&userCs);
-			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
-			LeaveCriticalSection(&userCs);
+			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+			{
+				lock_guard<mutex> guard(userCs);  // Lock최소화
+				userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
+			}
 
 			unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
 			bool find = false;
@@ -881,11 +897,14 @@ namespace BusinessService {
 
 			char roomName[NAME_SIZE];
 
-			EnterCriticalSection(&userCs);
-			map<string, shared_ptr<ROOM_DATA>>::iterator it = roomMap.find(
-				userMap.find(sock)->second.roomName);
-			strncpy(roomName, userMap.find(sock)->second.roomName, NAME_SIZE);
-			LeaveCriticalSection(&userCs);
+			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+			map<string, shared_ptr<ROOM_DATA>>::iterator it;
+			{
+				lock_guard<mutex> guard(userCs);  // Lock최소화
+				it = roomMap.find(
+					userMap.find(sock)->second.roomName);
+				strncpy(roomName, userMap.find(sock)->second.roomName, NAME_SIZE);
+			}
 
 			if (it != roomMap.end()) { // null 검사
 				InsertSendQueue(SendTo::SEND_ROOM, sendMsg, userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_CHATTIG);
@@ -1005,15 +1024,15 @@ namespace BusinessService {
 
 	// 클라이언트의 상태정보 반환
 	ClientStatus BusinessService::GetStatus(SOCKET sock) {
-		EnterCriticalSection(&this->userCs);
+		
+		lock_guard<mutex> guard(userCs);  // Lock최소화
+	
 		unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter = userMap.find(sock);
 		if (iter == userMap.end()) {
-			LeaveCriticalSection(&this->userCs);
 			return ClientStatus::STATUS_LOGOUT;
 		}
 		else {
 			ClientStatus status = userMap.find(sock)->second.status;
-			LeaveCriticalSection(&this->userCs);
 			return status;
 		}
 	}
@@ -1061,9 +1080,11 @@ namespace BusinessService {
 
 	void BusinessService::BanUser(SOCKET socket, const char* nickName) {
 
-		EnterCriticalSection(&userCs);
-		unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
-		LeaveCriticalSection(&userCs);
+		unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+		{
+			lock_guard<mutex> guard(userCs);  // Lock최소화
+			userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
+		}
 
 		unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
 
@@ -1108,10 +1129,11 @@ namespace BusinessService {
 					// Room List 개별 Lock만
 
 
-					EnterCriticalSection(&userCs); // 로그인된 사용자정보 변경 Lock
-					strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
-					userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // 상태 변경
-					LeaveCriticalSection(&userCs);
+					{
+						lock_guard<mutex> guard(userCs);  // 로그인된 사용자정보 변경 Lock
+						strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // 방이름 초기화
+						userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // 상태 변경
+					}
 
 					// room Lock은 방 완전 삭제시 에만
 					EnterCriticalSection(&roomCs);
@@ -1125,10 +1147,11 @@ namespace BusinessService {
 				string str = "당신은 관리자에의해 강퇴되었습니다";
 				InsertSendQueue(SendTo::SEND_ME, str.c_str(), "", sock, ClientStatus::STATUS_LOGOUT);
 
-				EnterCriticalSection(&userCs);
-				userMap.erase(sock); // 접속 소켓 정보 삭제
-				cout << "Now login user count : " << userMap.size() << endl;
-				LeaveCriticalSection(&userCs);
+				{
+					lock_guard<mutex> guard(userCs);
+					userMap.erase(sock); // 접속 소켓 정보 삭제
+					cout << "Now login user count : " << userMap.size() << endl;
+				}
 
 				break;
 			}

@@ -60,7 +60,7 @@ private:
 	// idMap 동기화
 	CRITICAL_SECTION idCs;
 	// userMap 동기화
-	CRITICAL_SECTION userCs;
+	mutex userCs;
 	// roomMap 동기화
 	CRITICAL_SECTION roomCs;
 	
@@ -149,9 +149,6 @@ public:
 		return roomCs;
 	}
 
-	const CRITICAL_SECTION& getUserCs() const {
-		return userCs;
-	}
 };
 
 } /* namespace Service */
