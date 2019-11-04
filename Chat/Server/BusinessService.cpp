@@ -24,6 +24,15 @@ namespace BusinessService {
 		this->func[1] = &BusinessService::StatusLogout;
 		this->func[2] = &BusinessService::StatusWait;
 		this->func[3] = &BusinessService::StatusChat;
+
+		this->directionFunc[1] = &BusinessService::UserMake;
+		this->directionFunc[2] = &BusinessService::UserEnter;
+		this->directionFunc[3] = &BusinessService::RoomMake;
+		this->directionFunc[4] = &BusinessService::RoomEnter;
+
+		this->directionFunc[6] = &BusinessService::Whisper;
+		this->directionFunc[7] = &BusinessService::RoomInfo;
+		this->directionFunc[8] = &BusinessService::RoomUserInfo;
 	}
 
 	BusinessService::~BusinessService() {
@@ -267,106 +276,9 @@ namespace BusinessService {
 
 		string msg = "";
 
-		if (direction == Direction::USER_MAKE) { // 1번 계정생성
+		if (direction == Direction::USER_MAKE || direction == Direction::USER_ENTER) { // 1번 계정생성 2번 로그인 시도
 
-			char *sArr[3] = { NULL, };
-			char message2[BUF_SIZE];
-			strncpy(message2, message, BUF_SIZE);
-			char *ptr = strtok(message2, "\\"); // 공백 문자열을 기준으로 문자열을 자름
-			int i = 0;
-			while (ptr != NULL)            // 자른 문자열이 나오지 않을 때까지 반복
-			{
-				sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
-				i++;                       // 인덱스 증가
-				ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
-			}
-			// 유효성 검증 필요
-			if (sArr[0] != NULL && sArr[1] != NULL && sArr[2] != NULL) {
-
-				UserVo vo;
-				vo.setUserId(sArr[0]);
-				vo = move(Dao::GetInstance()->selectUser(vo));
-
-				if (strcmp(vo.getUserId(), "") == 0) { // ID 중복체크 => 계정 없음
-
-					vo.setUserId(sArr[0]);
-					vo.setPassword(sArr[1]);
-					vo.setNickName(sArr[2]);
-
-					Dao::GetInstance()->InsertUser(vo);
-
-					msg.append(sArr[0]);
-					msg.append("계정 생성 완료!\n");
-					msg.append(loginBeforeMessage);
-
-					InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
-
-				}
-				else { // ID중복있음
-
-					msg.append("중복된 아이디가 있습니다!\n");
-					msg.append(loginBeforeMessage);
-
-					InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
-				}
-			}
-
-		}
-		else if (direction == Direction::USER_ENTER) { // 2번 로그인 시도
-
-			char *sArr[2] = { NULL, };
-			char message2[BUF_SIZE];
-			strncpy(message2, message, BUF_SIZE);
-			char *ptr = strtok(message2, "\\"); // 공백 문자열을 기준으로 문자열을 자름
-			int i = 0;
-			while (ptr != NULL)            // 자른 문자열이 나오지 않을 때까지 반복
-			{
-				sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
-				i++;                       // 인덱스 증가
-				ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
-			}
-			if (sArr[0] != NULL && sArr[1] != NULL) {
-
-				UserVo vo;
-				vo.setUserId(sArr[0]);
-				vo = move(Dao::GetInstance()->selectUser(vo));
-
-				if (strcmp(vo.getUserId(), "") == 0) { // 계정 없음
-
-					msg.append("없는 계정입니다 아이디를 확인하세요!\n");
-					msg.append(loginBeforeMessage);
-
-					// SendQueue에 Insert
-					InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
-
-				}
-				else if (strcmp(vo.getPassword(), sArr[1]) == 0) { // 비밀번호 일치
-					EnterCriticalSection(&idCs);
-					unordered_set<string>::const_iterator it = idSet.find(sArr[0]);
-					if (it != idSet.end()) { // 중복로그인 유효성 검사
-						LeaveCriticalSection(&idCs); // Case Lock 해제
-						msg.append("중복 로그인은 안됩니다!\n");
-						msg.append(loginBeforeMessage);
-
-						// SendQueue에 Insert
-						InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
-
-					}
-					else { // 중복로그인 X
-						idSet.insert(sArr[0]);
-						LeaveCriticalSection(&idCs); //Init부분 두번동작 방지
-						InitUser(sArr[0], sock, vo.getNickName()); // 세션정보 저장
-					}
-
-				}
-				else { // 비밀번호 틀림
-					msg.append("비밀번호 틀림!\n");
-					msg.append(loginBeforeMessage);
-
-					InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
-				}
-			}
-
+			(this->*directionFunc[direction])(sock, status, direction, message);
 		}
 		else if (direction == Direction::EXIT) {
 			// 정상종료
@@ -391,147 +303,10 @@ namespace BusinessService {
 		if (direction == -1) {
 			return;
 		}
-		else if (direction == Direction::ROOM_MAKE) { // 새로운 방 만들때
-
-			// 유효성 검증 먼저
-			EnterCriticalSection(&roomCs);
-			size_t cnt = roomMap.count(msg);
-
-			if (cnt != 0) { // 방이름 중복
-				LeaveCriticalSection(&roomCs);
-				msg += "이미 있는 방 이름입니다!\n";
-				msg += waitRoomMessage;
-				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
-				// 중복 케이스는 방 만들 수 없음
-			}
-			else { // 방이름 중복 아닐 때만 개설
-				// 새로운 방 정보 저장
-				shared_ptr<ROOM_DATA> roomData = make_shared<ROOM_DATA>();
-				list<SOCKET> chatList;
-				chatList.push_back(sock);
-				// 방 리스트별 CS객체 Init
-				roomData->userList = chatList;
-				roomMap[msg] = roomData;
-
-				LeaveCriticalSection(&roomCs);
-
-				// User의 상태 정보 바꾼다
-				{
-					lock_guard<mutex> guard(userCs);  // Lock최소화
-					strncpy((userMap.find(sock))->second.roomName, msg.c_str(),
-						NAME_SIZE);
-					(userMap.find(sock))->second.status =
-						ClientStatus::STATUS_CHATTIG;
-				}
-
-				msg += " 방이 개설되었습니다.";
-				msg += chatRoomMessage;
-				cout << "Now server room count : " << roomMap.size() << endl;
-				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_CHATTIG);
-
-			}
-
-		}
-		else if (direction == Direction::ROOM_ENTER) { // 방 입장 요청
-
-			// 유효성 검증 먼저
-			EnterCriticalSection(&roomCs);
-
-			if (roomMap.find(msg) == roomMap.end()) { // 방 못찾음
-				LeaveCriticalSection(&roomCs);
-				msg = "없는 방 입니다!\n";
-				msg += waitRoomMessage;
-
-				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
-
-			}
-			else {
-
-				auto iter = roomMap.find(msg);
-				shared_ptr<ROOM_DATA> second = nullptr;
-				if (iter != roomMap.end()) {
-					second = iter->second;
-				}
-				LeaveCriticalSection(&roomCs); // 개별방 입장과 전체 방 Lock 따로
-
-				if (second != nullptr) { // 방이 살아있을 때 상태 업데이트 + list insert
-					
-					{
-						lock_guard<mutex> guard(userCs);  // Lock최소화
-						strncpy(userMap.find(sock)->second.roomName, msg.c_str(),
-							NAME_SIZE); // 로그인 유저 정보 변경
-						userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
-					}
-					{
-						lock_guard<recursive_mutex> guard(roomMap.find(msg)->second->listCs);
-						//방이 있으니까 유저를 insert
-						roomMap.find(msg)->second->userList.push_back(sock);
-					}
-					 // 방의 Lock
-
-					string sendMsg = name;
-					sendMsg += " 님이 입장하셨습니다. ";
-					sendMsg += chatRoomMessage;
-
-					InsertSendQueue(SendTo::SEND_ROOM, sendMsg, msg, 0, ClientStatus::STATUS_CHATTIG);
-				}
-			}
-		}
-		else if (direction == Direction::ROOM_INFO) { // 방 정보 요청시
-
-			string str;
-			if (roomMap.size() == 0) {
-				str = "만들어진 방이 없습니다";
-			}
-			else {
-				str += "방 정보 리스트";
-				EnterCriticalSection(&roomCs);
-				map<string, shared_ptr<ROOM_DATA>> roomCopyMap = roomMap;
-				LeaveCriticalSection(&roomCs);
-				// roomMap 계속 잡고 있지 않도록 깊은복사
-				map<string, shared_ptr<ROOM_DATA>>::const_iterator iter;
-
-				// 방정보를 문자열로 만든다
-				for (iter = roomCopyMap.begin(); iter != roomCopyMap.end();
-					iter++) {
-					str += "\n";
-					str += iter->first.c_str();
-					str += ":";
-					str += to_string((iter->second)->userList.size());
-					str += "명";
-				}
-
-			}
-
-			InsertSendQueue(SendTo::SEND_ME, str, "", sock, ClientStatus::STATUS_WAITING);
-
-		}
-		else if (direction == Direction::ROOM_USER_INFO) { // 유저 정보 요청시
-			string str = "유저 정보 리스트";
-			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
-			{
-				lock_guard<mutex> guard(userCs);  // Lock최소화
-				userCopyMap = userMap;
-			}
-			// userMap 계속 잡고 있지 않도록 깊은복사
-			unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
-			for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
-				if (str.length() >= 4000) {
-					break;
-				}
-				str += "\n";
-				str += (iter->second).userName;
-				str += ":";
-				if ((iter->second).status == ClientStatus::STATUS_WAITING) {
-					str += "대기실";
-				}
-				else {
-					str += (iter->second).roomName;
-				}
-			}
-
-			InsertSendQueue(SendTo::SEND_ME, str, "", sock, ClientStatus::STATUS_WAITING);
-
+		else if (direction == Direction::ROOM_MAKE || direction == Direction::ROOM_ENTER || direction == Direction::WHISPER
+			|| direction == Direction::ROOM_INFO || direction == Direction::ROOM_USER_INFO) { 
+			(this->*directionFunc[direction])(sock, status, direction, message);
+		
 		}
 		else if (direction == Direction::FRIEND_INFO) { // 친구 정보 요청
 
@@ -687,66 +462,6 @@ namespace BusinessService {
 
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 			}
-		}
-		else if (direction == Direction::WHISPER) { // 귓속말
-
-			char *sArr[2] = { NULL, };
-			char message2[BUF_SIZE];
-			strncpy(message2, message, BUF_SIZE);
-			char *ptr = strtok(message2, "\\"); // 공백 문자열을 기준으로 문자열을 자름
-			int i = 0;
-			while (ptr != NULL)            // 자른 문자열이 나오지 않을 때까지 반복
-			{
-				sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
-				i++;                       // 인덱스 증가
-				ptr = strtok(NULL, "\\");   // 다음 문자열을 잘라서 포인터를 반환
-			}
-			if (sArr[0] != NULL && sArr[1] != NULL) {
-				name = string(sArr[0]);
-				msg = string(sArr[1]);
-
-				string sendMsg;
-
-				if (name.compare(userMap.find(sock)->second.userName) == 0) { // 본인에게 쪽지
-					sendMsg = "자신에게 쪽지를 보낼수 없습니다\n";
-					sendMsg += waitRoomMessage;
-
-					InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
-
-				}
-				else {
-					bool find = false;
-					unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
-					{
-						lock_guard<mutex> guard(userCs);  // Lock최소화
-						userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
-					}
-
-					unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
-
-					for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
-						if (name.compare(iter->second.userName) == 0) {
-							find = true;
-							sendMsg = userCopyMap.find(sock)->second.userName;
-							sendMsg += " 님에게 온 귓속말 : ";
-							sendMsg += msg;
-
-							InsertSendQueue(SendTo::SEND_ME, sendMsg, "", iter->first, ClientStatus::STATUS_WHISPER);
-
-							break;
-						}
-					}
-
-					// 귓속말 대상자 못찾음
-					if (!find) {
-						sendMsg = name;
-						sendMsg += " 님을 찾을 수 없습니다";
-
-						InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
-					}
-				}
-			}
-
 		}
 		else if (direction == Direction::LOG_OUT) { // 로그아웃
 			char id[NAME_SIZE];
@@ -1035,6 +750,342 @@ namespace BusinessService {
 			ClientStatus status = userMap.find(sock)->second.status;
 			return status;
 		}
+	}
+
+	// 계정만들기
+	void BusinessService::UserMake(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+		
+		string msg = "";
+		char* sArr[3] = { nullptr, };
+		char message2[BUF_SIZE];
+		strncpy(message2, message, BUF_SIZE);
+		char* ptr = strtok(message2, "\\"); // 공백 문자열을 기준으로 문자열을 자름
+
+		int i = 0;
+		while (ptr != nullptr)            // 자른 문자열이 나오지 않을 때까지 반복
+		{
+			sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
+			i++;                       // 인덱스 증가
+			ptr = strtok(nullptr, "\\");   // 다음 문자열을 잘라서 포인터를 반환
+		}
+		// 유효성 검증 필요
+		if (sArr[0] != nullptr && sArr[1] != nullptr && sArr[2] != nullptr) {
+
+			UserVo vo;
+			vo.setUserId(sArr[0]);
+			vo = move(Dao::GetInstance()->selectUser(vo));
+
+			if (strcmp(vo.getUserId(), "") == 0) { // ID 중복체크 => 계정 없음
+
+				vo.setUserId(sArr[0]);
+				vo.setPassword(sArr[1]);
+				vo.setNickName(sArr[2]);
+
+				Dao::GetInstance()->InsertUser(vo);
+
+				msg.append(sArr[0]);
+				msg.append("계정 생성 완료!\n");
+				msg.append(loginBeforeMessage);
+
+				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
+
+			}
+			else { // ID중복있음
+
+				msg.append("중복된 아이디가 있습니다!\n");
+				msg.append(loginBeforeMessage);
+
+				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
+			}
+		}
+	}
+
+	// 유저입장
+	void BusinessService::UserEnter(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+		string msg = "";
+
+		char* sArr[2] = { nullptr, };
+		char message2[BUF_SIZE];
+		strncpy(message2, message, BUF_SIZE);
+		char* ptr = strtok(message2, "\\"); // 공백 문자열을 기준으로 문자열을 자름
+
+		int i = 0;
+		while (ptr != nullptr)            // 자른 문자열이 나오지 않을 때까지 반복
+		{
+			sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
+			i++;                       // 인덱스 증가
+			ptr = strtok(nullptr, "\\");   // 다음 문자열을 잘라서 포인터를 반환
+		}
+		if (sArr[0] != nullptr && sArr[1] != nullptr) {
+
+			UserVo vo;
+			vo.setUserId(sArr[0]);
+			vo = move(Dao::GetInstance()->selectUser(vo));
+
+			if (strcmp(vo.getUserId(), "") == 0) { // 계정 없음
+
+				msg.append("없는 계정입니다 아이디를 확인하세요!\n");
+				msg.append(loginBeforeMessage);
+
+				// SendQueue에 Insert
+				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
+
+			}
+			else if (strcmp(vo.getPassword(), sArr[1]) == 0) { // 비밀번호 일치
+				EnterCriticalSection(&idCs);
+				unordered_set<string>::const_iterator it = idSet.find(sArr[0]);
+				if (it != idSet.end()) { // 중복로그인 유효성 검사
+					LeaveCriticalSection(&idCs); // Case Lock 해제
+					msg.append("중복 로그인은 안됩니다!\n");
+					msg.append(loginBeforeMessage);
+
+					// SendQueue에 Insert
+					InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
+
+				}
+				else { // 중복로그인 X
+					idSet.insert(sArr[0]);
+					LeaveCriticalSection(&idCs); //Init부분 두번동작 방지
+					InitUser(sArr[0], sock, vo.getNickName()); // 세션정보 저장
+				}
+
+			}
+			else { // 비밀번호 틀림
+				msg.append("비밀번호 틀림!\n");
+				msg.append(loginBeforeMessage);
+
+				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
+			}
+		}
+	}
+	
+	// 방 만들기 기능
+	void BusinessService::RoomMake(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+
+		string name = userMap.find(sock)->second.userName;
+		string id = userMap.find(sock)->second.userId;
+		string msg = string(message);
+
+		// 유효성 검증 먼저
+		EnterCriticalSection(&roomCs);
+		size_t cnt = roomMap.count(msg);
+
+		if (cnt != 0) { // 방이름 중복
+			LeaveCriticalSection(&roomCs);
+			msg.append("이미 있는 방 이름입니다!\n");
+			msg.append(waitRoomMessage);
+			InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
+			// 중복 케이스는 방 만들 수 없음
+		}
+		else { // 방이름 중복 아닐 때만 개설
+			// 새로운 방 정보 저장
+			shared_ptr<ROOM_DATA> roomData = make_shared<ROOM_DATA>();
+			list<SOCKET> chatList;
+			chatList.push_back(sock);
+			// 방 리스트별 CS객체 Init
+			roomData->userList = chatList;
+			roomMap[msg] = roomData;
+
+			LeaveCriticalSection(&roomCs);
+
+			// User의 상태 정보 바꾼다
+			{
+				lock_guard<mutex> guard(userCs);  // Lock최소화
+				strncpy((userMap.find(sock))->second.roomName, msg.c_str(),
+					NAME_SIZE);
+				(userMap.find(sock))->second.status =
+					ClientStatus::STATUS_CHATTIG;
+			}
+
+			msg += " 방이 개설되었습니다.";
+			msg += chatRoomMessage;
+			cout << "Now server room count : " << roomMap.size() << endl;
+			InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_CHATTIG);
+
+		}
+	}
+
+	// 방 들어가기
+	void BusinessService::RoomEnter(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+
+		string name = userMap.find(sock)->second.userName;
+		string id = userMap.find(sock)->second.userId;
+		string msg = string(message);
+
+		// 유효성 검증 먼저
+		EnterCriticalSection(&roomCs);
+
+		if (roomMap.find(msg) == roomMap.end()) { // 방 못찾음
+			LeaveCriticalSection(&roomCs);
+			msg.append("없는 방 입니다!\n");
+			msg.append(waitRoomMessage);
+
+			InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
+
+		}
+		else {
+
+			auto iter = roomMap.find(msg);
+			shared_ptr<ROOM_DATA> second = nullptr;
+			if (iter != roomMap.end()) {
+				second = iter->second;
+			}
+			LeaveCriticalSection(&roomCs); // 개별방 입장과 전체 방 Lock 따로
+
+			if (second != nullptr) { // 방이 살아있을 때 상태 업데이트 + list insert
+
+				{
+					lock_guard<mutex> guard(userCs);  // Lock최소화
+					strncpy(userMap.find(sock)->second.roomName, msg.c_str(),
+						NAME_SIZE); // 로그인 유저 정보 변경
+					userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
+				}
+				{
+					lock_guard<recursive_mutex> guard(roomMap.find(msg)->second->listCs);
+					//방이 있으니까 유저를 insert
+					roomMap.find(msg)->second->userList.push_back(sock);
+				}
+				// 방의 Lock
+
+				string sendMsg = name;
+				sendMsg.append(" 님이 입장하셨습니다. ");
+				sendMsg.append(chatRoomMessage);
+
+				InsertSendQueue(SendTo::SEND_ROOM, sendMsg, msg, 0, ClientStatus::STATUS_CHATTIG);
+			}
+		}
+	}
+
+	// 귓속말
+	void BusinessService::Whisper(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+
+		string name = userMap.find(sock)->second.userName;
+		string id = userMap.find(sock)->second.userId;
+		string msg = string(message);
+
+		char* sArr[2] = { nullptr, };
+		char message2[BUF_SIZE];
+		strncpy(message2, message, BUF_SIZE);
+		char* ptr = strtok(message2, "\\"); // 공백 문자열을 기준으로 문자열을 자름
+		int i = 0;
+		while (ptr != nullptr)            // 자른 문자열이 나오지 않을 때까지 반복
+		{
+			sArr[i] = ptr;           // 문자열을 자른 뒤 메모리 주소를 문자열 포인터 배열에 저장
+			i++;                       // 인덱스 증가
+			ptr = strtok(nullptr, "\\");   // 다음 문자열을 잘라서 포인터를 반환
+		}
+		if (sArr[0] != nullptr && sArr[1] != nullptr) {
+			name = string(sArr[0]);
+			msg = string(sArr[1]);
+
+			string sendMsg;
+
+			if (name.compare(userMap.find(sock)->second.userName) == 0) { // 본인에게 쪽지
+				sendMsg = "자신에게 쪽지를 보낼수 없습니다\n";
+				sendMsg += waitRoomMessage;
+
+				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
+
+			}
+			else {
+				bool find = false;
+				unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+				{
+					lock_guard<mutex> guard(userCs);  // Lock최소화
+					userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
+				}
+
+				unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
+
+				for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
+					if (name.compare(iter->second.userName) == 0) {
+						find = true;
+						sendMsg = userCopyMap.find(sock)->second.userName;
+						sendMsg += " 님에게 온 귓속말 : ";
+						sendMsg += msg;
+
+						InsertSendQueue(SendTo::SEND_ME, sendMsg, "", iter->first, ClientStatus::STATUS_WHISPER);
+
+						break;
+					}
+				}
+
+				// 귓속말 대상자 못찾음
+				if (!find) {
+					sendMsg = name;
+					sendMsg += " 님을 찾을 수 없습니다";
+
+					InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
+				}
+			}
+		}
+
+	}
+
+	// 방 정보
+	void BusinessService::RoomInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+
+		string name = userMap.find(sock)->second.userName;
+		string id = userMap.find(sock)->second.userId;
+		string msg = string(message);
+
+		string str;
+		if (roomMap.size() == 0) {
+			str = "만들어진 방이 없습니다";
+		}
+		else {
+			str += "방 정보 리스트";
+			EnterCriticalSection(&roomCs);
+			map<string, shared_ptr<ROOM_DATA>> roomCopyMap = roomMap;
+			LeaveCriticalSection(&roomCs);
+			// roomMap 계속 잡고 있지 않도록 깊은복사
+			map<string, shared_ptr<ROOM_DATA>>::const_iterator iter;
+
+			// 방정보를 문자열로 만든다
+			for (iter = roomCopyMap.begin(); iter != roomCopyMap.end();
+				iter++) {
+				str += "\n";
+				str += iter->first.c_str();
+				str += ":";
+				str += to_string((iter->second)->userList.size());
+				str += "명";
+			}
+
+		}
+
+		InsertSendQueue(SendTo::SEND_ME, str, "", sock, ClientStatus::STATUS_WAITING);
+	}
+
+	// 유저 방 정보
+	void BusinessService::RoomUserInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+		string name = userMap.find(sock)->second.userName;
+		string id = userMap.find(sock)->second.userId;
+		string msg = string(message);
+
+		string str = "유저 정보 리스트";
+		unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+		{
+			lock_guard<mutex> guard(userCs);  // Lock최소화
+			userCopyMap = userMap;
+		}
+		// userMap 계속 잡고 있지 않도록 깊은복사
+		unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
+		for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
+			if (str.length() >= 4000) {
+				break;
+			}
+			str += "\n";
+			str += (iter->second).userName;
+			str += ":";
+			if ((iter->second).status == ClientStatus::STATUS_WAITING) {
+				str += "대기실";
+			}
+			else {
+				str += (iter->second).roomName;
+			}
+		}
+
+		InsertSendQueue(SendTo::SEND_ME, str, "", sock, ClientStatus::STATUS_WAITING);
 	}
 
 	// 친구추가 기능

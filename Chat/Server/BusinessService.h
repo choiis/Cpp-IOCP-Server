@@ -21,15 +21,6 @@
 #include "Dao.h"
 #include "Redis.h"
 
-
-// SQLwork에게 전달할 정보들
-enum class SqlWork{
-	UPDATE_USER,
-	INSERT_LOGIN,
-	INSERT_DIRECTION,
-	INSERT_CHATTING
-};
-
 // 서버에 접속한 유저 정보
 // client 소켓에 대응하는 세션정보
 typedef struct { // socket info
@@ -89,7 +80,33 @@ private:
 	// 채팅방에서의 로직 처리
 	// 세션값 있음
 	void StatusChat(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+
+
+	// 계정만들기
+	void UserMake(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+	// 유저입장
+	void UserEnter(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+
+	// 방 만들기 기능
+	void RoomMake(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+	// 방 들어가기
+	void RoomEnter(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+
+	// 귓속말
+	void Whisper(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+	// 방 정보
+	void RoomInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+	// 유저 방 정보
+	void RoomUserInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+
+	// 친구추가 기능
+	void AddFriend(SOCKET sock, const string& msg, const string& id, ClientStatus status);
+
 	void (BusinessService::*func[4])(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+
+	// 계정만들기
+	void (BusinessService::* directionFunc[9])(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+
 public:
 
 	void callFuncPointer(SOCKET sock, ClientStatus status, Direction direction, const char* message);
@@ -116,8 +133,7 @@ public:
 
 	// 클라이언트의 상태정보 반환
 	ClientStatus GetStatus(SOCKET sock);
-	// 친구추가 기능
-	void AddFriend(SOCKET sock, const string& msg, const string& id, ClientStatus status);
+	
 	// 연결중 socket Insert
 	void InsertLiveSocket(const SOCKET& hClientSock, const SOCKADDR_IN& addr);
 	// socket 죽었는지 확인
