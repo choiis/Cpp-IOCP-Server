@@ -98,14 +98,19 @@ private:
 	void RoomInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 	// 유저 방 정보
 	void RoomUserInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-
+	// 친구정보 요청
+	void FriendInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 	// 친구추가 기능
-	void AddFriend(SOCKET sock, const string& msg, const string& id, ClientStatus status);
+	void FriendAdd(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+	// 친구에게 가기
+	void FriendGo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+	// 친구삭제
+	void FriendDelete(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
 	void (BusinessService::*func[4])(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
 	// 계정만들기
-	void (BusinessService::* directionFunc[9])(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+	void (BusinessService::* directionFunc[13])(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
 public:
 

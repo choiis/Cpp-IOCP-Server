@@ -33,6 +33,10 @@ namespace BusinessService {
 		this->directionFunc[6] = &BusinessService::Whisper;
 		this->directionFunc[7] = &BusinessService::RoomInfo;
 		this->directionFunc[8] = &BusinessService::RoomUserInfo;
+		this->directionFunc[9] = &BusinessService::FriendInfo;
+		this->directionFunc[10] = &BusinessService::FriendAdd;
+		this->directionFunc[11] = &BusinessService::FriendGo;
+		this->directionFunc[12] = &BusinessService::FriendDelete;
 	}
 
 	BusinessService::~BusinessService() {
@@ -304,164 +308,11 @@ namespace BusinessService {
 			return;
 		}
 		else if (direction == Direction::ROOM_MAKE || direction == Direction::ROOM_ENTER || direction == Direction::WHISPER
-			|| direction == Direction::ROOM_INFO || direction == Direction::ROOM_USER_INFO) { 
+			|| direction == Direction::ROOM_INFO || direction == Direction::ROOM_USER_INFO || direction == Direction::FRIEND_INFO
+			|| direction == Direction::FRIEND_ADD || direction == Direction::FRIEND_GO || direction == Direction::FRIEND_DELETE) {
+			
 			(this->*directionFunc[direction])(sock, status, direction, message);
 		
-		}
-		else if (direction == Direction::FRIEND_INFO) { // 친구 정보 요청
-
-			RelationVo vo;
-			vo.setUserId(id.c_str());
-			vector<RelationVo> vec = move(Dao::GetInstance()->selectFriends(vo));
-
-			string sendMsg = "친구 정보 리스트";
-			if (vec.size() == 0) {
-				sendMsg.append("\n등록된 친구가 없습니다");
-				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
-			}
-			else {
-				unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
-				{
-					lock_guard<mutex> guard(userCs);  // Lock최소화
-					userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
-				}
-
-				// Select해서 가져온 유저의 친구정보
-				for (int i = 0; i < vec.size(); i++) {
-
-					unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
-					bool exist = false;
-					// userMap을 탐색하여 친구 위치 가공
-					for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
-						if (strcmp(vec[i].getNickName(), iter->second.userName) == 0) {
-							sendMsg += "\n";
-							sendMsg += vec[i].getNickName();
-							sendMsg += ":";
-							if (strcmp(iter->second.roomName, "") == 0) {
-								sendMsg += "대기실";
-							}
-							else {
-								sendMsg += iter->second.roomName;
-							}
-							exist = true;
-							break;
-						}
-					}
-					// userMap에 없으면 접속 안한 상태
-					if (!exist) {
-						sendMsg += "\n";
-						sendMsg += vec[i].getNickName();
-						sendMsg += ":";
-						sendMsg += "접속안함";
-					}
-
-				}
-				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
-			}
-
-		}
-		else if (direction == Direction::FRIEND_ADD) { // 친구 추가
-			AddFriend(sock, msg, id, ClientStatus::STATUS_WAITING);
-		}
-		else if (direction == Direction::FRIEND_GO) { // 친구가 있는 방으로
-			RelationVo vo;
-			vo.setUserId(id.c_str());
-			vo.setRelationto(msg.c_str());
-			// 요청 친구 정보 select
-			RelationVo vo2 = move(Dao::GetInstance()->selectOneFriend(vo));
-
-			if (strcmp(vo2.getNickName(), "") == 0) { // 친구정보 못찾음
-				string sendMsg = "친구정보를 찾을 수 없습니다\n";
-				sendMsg += waitRoomMessage;
-				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
-			}
-			else {
-				unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
-				{
-					lock_guard<mutex> guard(userCs);  // Lock최소화
-					userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
-				}
-
-				unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
-
-				bool exist = false;
-
-				for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
-					if (strcmp(vo2.getNickName(), iter->second.userName) == 0) { // 일치 닉네임 찾음
-						if (strcmp(iter->second.roomName, "") == 0) { // 대기실에 있음
-							string sendMsg = string(message);
-							sendMsg += " 님은 대기실에 있습니다";
-
-							InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
-							exist = true;
-							break;
-						}
-						else { // 방 입장 프로세스
-							EnterCriticalSection(&roomCs);
-							string roomName = iter->second.roomName;
-							auto iter = roomMap.find(roomName);
-							shared_ptr<ROOM_DATA> second = nullptr;
-							if (iter != roomMap.end()) {
-								second = iter->second;
-							}
-							LeaveCriticalSection(&roomCs); // 개별방 입장과 전체 방 Lock 따로
-
-							if (second != nullptr) { // 방이 살아있을 때 상태 업데이트 + list insert
-								string nick;
-								{
-									lock_guard<mutex> guard(userCs);  // Lock최소화
-									strncpy(userMap.find(sock)->second.roomName, roomName.c_str(),
-										NAME_SIZE); // 로그인 유저 정보 변경
-									userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
-									nick = userMap.find(sock)->second.userName;
-								}
-								{
-									lock_guard<recursive_mutex> guard(roomMap.find(msg)->second->listCs);
-									roomMap.find(roomName)->second->userList.push_back(sock);
-								}// 방의 Lock
-								
-								string sendMsg = "";
-								sendMsg.append(nick);
-								sendMsg += " 님이 입장하셨습니다. ";
-								sendMsg += chatRoomMessage;
-
-								InsertSendQueue(SendTo::SEND_ROOM, sendMsg, roomName, 0, ClientStatus::STATUS_CHATTIG);
-							}
-
-							exist = true;
-							break;
-						}
-					}
-				}
-
-				if (!exist) {
-					string sendMsg = string(message);
-					sendMsg += " 님은 접속중이 아닙니다";
-
-					InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
-				}
-			}
-		}
-		else if (direction == Direction::FRIEND_DELETE) { // 친구 삭제
-
-			RelationVo vo;
-			vo.setUserId(id.c_str());
-			vo.setRelationcode(1);
-			vo.setNickName(msg.c_str());
-
-			int res = Dao::GetInstance()->DeleteRelation(vo);
-			if (res != -1) { // 삭제 성공
-				string sendMsg = msg;
-				sendMsg += " 님을 친구 삭제했습니다";
-
-				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
-			}
-			else { // 삭제실패
-				string sendMsg = "친구 삭제실패\n";
-				sendMsg.append(waitRoomMessage);
-
-				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
-			}
 		}
 		else if (direction == Direction::LOG_OUT) { // 로그아웃
 			char id[NAME_SIZE];
@@ -563,7 +414,7 @@ namespace BusinessService {
 
 			msg.erase(0, 5); // 친구 이름 반환
 			// 친구추가
-			AddFriend(sock, msg, id, ClientStatus::STATUS_CHATTIG);
+			//FriendAdd(sock, msg, id, ClientStatus::STATUS_CHATTIG);
 		}
 		else if (direction == USER_GOOD) { // 인기도
 
@@ -1088,8 +939,70 @@ namespace BusinessService {
 		InsertSendQueue(SendTo::SEND_ME, str, "", sock, ClientStatus::STATUS_WAITING);
 	}
 
+	// 친구정보 요청
+	void BusinessService::FriendInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+		string name = userMap.find(sock)->second.userName;
+		string id = userMap.find(sock)->second.userId;
+		string msg = string(message);
+
+		RelationVo vo;
+		vo.setUserId(id.c_str());
+		vector<RelationVo> vec = move(Dao::GetInstance()->selectFriends(vo));
+
+		string sendMsg = "친구 정보 리스트";
+		if (vec.size() == 0) {
+			sendMsg.append("\n등록된 친구가 없습니다");
+			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
+		}
+		else {
+			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+			{
+				lock_guard<mutex> guard(userCs);  // Lock최소화
+				userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
+			}
+
+			// Select해서 가져온 유저의 친구정보
+			for (int i = 0; i < vec.size(); i++) {
+
+				unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
+				bool exist = false;
+				// userMap을 탐색하여 친구 위치 가공
+				for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
+					if (strcmp(vec[i].getNickName(), iter->second.userName) == 0) {
+						sendMsg += "\n";
+						sendMsg += vec[i].getNickName();
+						sendMsg += ":";
+						if (strcmp(iter->second.roomName, "") == 0) {
+							sendMsg += "대기실";
+						}
+						else {
+							sendMsg += iter->second.roomName;
+						}
+						exist = true;
+						break;
+					}
+				}
+				// userMap에 없으면 접속 안한 상태
+				if (!exist) {
+					sendMsg += "\n";
+					sendMsg += vec[i].getNickName();
+					sendMsg += ":";
+					sendMsg += "접속안함";
+				}
+
+			}
+			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
+		}
+	}
+
 	// 친구추가 기능
-	void BusinessService::AddFriend(SOCKET sock, const string& msg, const string& id, ClientStatus status) {
+	void BusinessService::FriendAdd(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+
+		string name = userMap.find(sock)->second.userName;
+		string id = userMap.find(sock)->second.userId;
+		string msg = string(message);
+		status = ClientStatus::STATUS_WAITING;
+
 		RelationVo vo;
 		vo.setNickName(msg.c_str());
 		RelationVo vo2 = move(Dao::GetInstance()->findUserId(vo)); // 아이디 존재 여부 검색
@@ -1115,6 +1028,118 @@ namespace BusinessService {
 				sendMsg.append("님이 친구추가 실패");
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, status);
 			}
+		}
+	}
+
+
+	// 친구에게 가기
+	void BusinessService::FriendGo(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+		string name = userMap.find(sock)->second.userName;
+		string id = userMap.find(sock)->second.userId;
+		string msg = string(message);
+
+		RelationVo vo;
+		vo.setUserId(id.c_str());
+		vo.setRelationto(msg.c_str());
+		// 요청 친구 정보 select
+		RelationVo vo2 = move(Dao::GetInstance()->selectOneFriend(vo));
+
+		if (strcmp(vo2.getNickName(), "") == 0) { // 친구정보 못찾음
+			string sendMsg = "친구정보를 찾을 수 없습니다\n";
+			sendMsg += waitRoomMessage;
+			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
+		}
+		else {
+			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
+			{
+				lock_guard<mutex> guard(userCs);  // Lock최소화
+				userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
+			}
+
+			unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
+
+			bool exist = false;
+
+			for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
+				if (strcmp(vo2.getNickName(), iter->second.userName) == 0) { // 일치 닉네임 찾음
+					if (strcmp(iter->second.roomName, "") == 0) { // 대기실에 있음
+						string sendMsg = string(message);
+						sendMsg += " 님은 대기실에 있습니다";
+
+						InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
+						exist = true;
+						break;
+					}
+					else { // 방 입장 프로세스
+						EnterCriticalSection(&roomCs);
+						string roomName = iter->second.roomName;
+						auto iter = roomMap.find(roomName);
+						shared_ptr<ROOM_DATA> second = nullptr;
+						if (iter != roomMap.end()) {
+							second = iter->second;
+						}
+						LeaveCriticalSection(&roomCs); // 개별방 입장과 전체 방 Lock 따로
+
+						if (second != nullptr) { // 방이 살아있을 때 상태 업데이트 + list insert
+							string nick;
+							{
+								lock_guard<mutex> guard(userCs);  // Lock최소화
+								strncpy(userMap.find(sock)->second.roomName, roomName.c_str(),
+									NAME_SIZE); // 로그인 유저 정보 변경
+								userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
+								nick = userMap.find(sock)->second.userName;
+							}
+							{
+								lock_guard<recursive_mutex> guard(roomMap.find(msg)->second->listCs);
+								roomMap.find(roomName)->second->userList.push_back(sock);
+							}// 방의 Lock
+
+							string sendMsg = "";
+							sendMsg.append(nick);
+							sendMsg += " 님이 입장하셨습니다. ";
+							sendMsg += chatRoomMessage;
+
+							InsertSendQueue(SendTo::SEND_ROOM, sendMsg, roomName, 0, ClientStatus::STATUS_CHATTIG);
+						}
+
+						exist = true;
+						break;
+					}
+				}
+			}
+
+			if (!exist) {
+				string sendMsg = string(message);
+				sendMsg += " 님은 접속중이 아닙니다";
+
+				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
+			}
+		}
+	}
+
+	// 친구삭제
+	void BusinessService::FriendDelete(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
+		string name = userMap.find(sock)->second.userName;
+		string id = userMap.find(sock)->second.userId;
+		string msg = string(message);
+
+		RelationVo vo;
+		vo.setUserId(id.c_str());
+		vo.setRelationcode(1);
+		vo.setNickName(msg.c_str());
+
+		int res = Dao::GetInstance()->DeleteRelation(vo);
+		if (res != -1) { // 삭제 성공
+			string sendMsg = msg;
+			sendMsg += " 님을 친구 삭제했습니다";
+
+			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
+		}
+		else { // 삭제실패
+			string sendMsg = "친구 삭제실패\n";
+			sendMsg.append(waitRoomMessage);
+
+			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 		}
 	}
 
