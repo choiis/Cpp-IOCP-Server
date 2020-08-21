@@ -58,11 +58,21 @@ add constraint pk_cso_relation primary key(relationfrom , relationcode , relatio
 alter table cso_relation
 add constraint fk_cso_relation foreign key(relationfrom) references cso_id(userid) on delete cascade;
 
+
+CREATE table daily (
+regdate varchar(10) not null,
+uniqueuser smallint,
+chattraffic int
+);
+
+alter table daily
+add constraint pk_daily primary key(regdate);
+
 CREATE table cso_filerecv (
 nickname varchar(20) not null,
 filename varchar(100) not null,
 regdate datetime not null,
-bytes bitint not null
+bytes bigint not null
 );
 
 alter table cso_filerecv
