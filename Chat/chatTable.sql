@@ -23,7 +23,7 @@ add constraint pk_cso_login primary key(userid, logindate);
 alter table cso_login
 add constraint fk_cso_login foreign key(userid) references cso_id(userid) on delete cascade;
 
-create partition function cso_chat_orderdate ( datetime )
+create partition function part_direct_orderdate ( datetime )
 as range RIGHT
 for values (
    '2019'
@@ -31,8 +31,8 @@ for values (
   ,'2021'
 );
 
-create partition SCHEME cso_chat_orderdate
-as partition cso_chat_orderdate
+create partition SCHEME cso_direct_orderdate
+as partition part_direct_orderdate
 all to ( [primary]);
 
 create table cso_direction(
@@ -41,17 +41,30 @@ logdate datetime not null,
 status int not null,
 direction int not null,
 message varchar(512) not null
-) ON ps_OrderDate (logdate);
+) ON cso_direct_orderdate (logdate);
 
 alter table cso_direction
 add constraint pk_cso_direction primary key(logdate ,nickname);
+
+
+create partition function part_chat_orderdate ( datetime )
+as range RIGHT
+for values (
+   '2019'
+  ,'2020'
+  ,'2021'
+);
+
+create partition SCHEME cso_chat_orderdate
+as partition part_chat_orderdate
+all to ( [primary]);
 
 create table cso_chatting(
 nickname varchar(20) not null,
 logdate datetime not null,
 roomname varchar(10) not null,
 message varchar(512) not null
-) ON ps_OrderDate (logdate);
+) ON cso_chat_orderdate (logdate);
 
 alter table cso_chatting
 add constraint pk_cso_chatting primary key(logdate , nickname);
