@@ -23,19 +23,19 @@ pipeline {
 
     stage('server build') {
       steps {
-		sh 'msbuild /property:Configuration=Release /p:Platform=x86  ./Server/Server.sln'
+		sh 'msbuild.exe /property:Configuration=Release /p:Platform=x86  ./Server/Server.sln'
       }
     }
 	
 	stage('bot client build') {
       steps {
-        sh 'msbuild /property:Configuration=Release /p:Platform=x86  ./BClient/BClient.sln'
+        sh 'msbuild.exe /property:Configuration=Release /p:Platform=x86  ./BClient/BClient.sln'
       }
     }
 	
 	stage('client build') {
       steps {
-        sh 'msbuild /property:Configuration=Release /p:Platform=x86  ./Client/Client.sln'
+        sh 'msbuild.exe /property:Configuration=Release /p:Platform=x86  ./Client/Client.sln'
       }
     }
 
