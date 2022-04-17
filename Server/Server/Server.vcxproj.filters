@@ -42,9 +42,6 @@
     <ClInclude Include="..\..\Chat\Server\RankVo.h">
       <Filter>소스 파일</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\Chat\Server\Redis.h">
-      <Filter>소스 파일</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\Chat\Server\Socket.h">
       <Filter>소스 파일</Filter>
     </ClInclude>
@@ -75,9 +72,6 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Chat\Server\RankVo.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\Chat\Server\Redis.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Chat\Server\Server.cpp">

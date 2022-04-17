@@ -19,7 +19,6 @@
 #include "IocpService.h"
 #include "FileService.h"
 #include "Dao.h"
-#include "Redis.h"
 
 // 서버에 접속한 유저 정보
 // client 소켓에 대응하는 세션정보

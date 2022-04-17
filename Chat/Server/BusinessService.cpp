@@ -331,17 +331,7 @@ namespace BusinessService {
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_LOGOUT);
 		}
 		else if (direction == Direction::USER_GOOD_INFO) { // 인기도 조회
-			vector<RankVo> vec = move(Redis::GetInstance()->Zrevrange("pl", 20));
-			string sendMsg = "인기도 리스트";
-			vector<RankVo>::iterator iter;
-			for (iter = vec.begin(); iter != vec.end(); iter++)
-			{
-				sendMsg += "\n";
-				sendMsg += iter->getNickName();
-				sendMsg += " :";
-				sendMsg += to_string(iter->getPoint());
-			}
-			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
+			
 		}
 		else { // 그외 명령어 입력
 			string sendMsg = errorMessage;
@@ -418,33 +408,6 @@ namespace BusinessService {
 		}
 		else if (direction == USER_GOOD) { // 인기도
 
-			// 방이름 임시 저장
-			string roomName = string(userMap.find(sock)->second.roomName);
-
-			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
-			{
-				lock_guard<mutex> guard(userCs);  // Lock최소화
-				userCopyMap = userMap; // 로그인된 친구정보 확인위해 복사
-			}
-
-			unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
-			bool find = false;
-			for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
-				if (strcmp(msg.c_str(), iter->second.userName) == 0) {
-					Redis::GetInstance()->Zincr("pl", msg);
-					find = true;
-					break;
-				}
-			}
-			
-			if (find) {
-				string sendMsg = "인기도 추천 성공\n";
-				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_CHATTIG);
-			}
-			else {
-				string sendMsg = "인기도 추천 실패\n";
-				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_CHATTIG);
-			}
 		}
 		else if (direction == FILE_SEND) {
 			string fileDir = move(fileService->RecvFile(sock, string(userMap.find(sock)->second.userName)));
