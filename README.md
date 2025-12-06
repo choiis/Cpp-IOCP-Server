@@ -1,58 +1,203 @@
+# Cpp-IOCP-Server
 
-## C++ Console Chatting Program
-* This project was developed with Visual Studio 2026 on Windows
-* It is built in Visual Studio 2026.
+High-performance Windows C++ Chat Server using **I/O Completion Ports
+(IOCP)**, fully compatible with **Visual Studio 2026** and SQL Server.
 
-* Server is the console chat server
-* BClient is a bot client
-* Client is a console client
+This project includes:
 
-### Prepare project environment
-* First, prepare the SQL Server DB
-* To start the server, you need to write SQL Server information in /Server/Server/conf/SqlConnection.properties.
-* There is table information in /Chat/chatTable.sql. Create it in SQL Server DB in advance
+-   ✔️ Console-based **Chat Server**
+-   ✔️ Console **Client**
+-   ✔️ Automated **Bot Client (BClient)**
+-   ✔️ SQL Server integration
+-   ✔️ Jenkins CI build pipeline
+-   ✔️ Tested and runnable on **Visual Studio 2026 + Windows 11/10**
 
-### How to use Jenkins to build this project
-* You can make Jenkins pipeline or build job by referring to the contents written in Jenkinsfile.
-* You need to download git and msbuild Jenkins plugins on Windows operating system.
-* msbuild.exe links to C:\Program Files (x86)\Microsoft Visual Studio\2026\Community\MSBuild\Current\Bin\msbuild.exe
+------------------------------------------------------------------------
 
-### Server build on Visual Studio 2026
-* Open the Server project by clicking Server.sln
-* In Visual Studio 2026 project configuration properties
+## Overview
 
+`Cpp-IOCP-Server` is a multithreaded TCP chat server implemented using
+**Windows I/O Completion Ports (IOCP)** for scalable asynchronous
+networking.
+
+It is designed to handle many concurrent clients efficiently with
+minimal CPU overhead.
+
+### Key Components
+
+  Component                    Description
+  ---------------------------- -----------------------------------------------
+  **Server**                   Console-based asynchronous IOCP TCP server
+  **Client**                   Simple console client for manual chat testing
+  **BClient**                  Bot client for load testing & automation
+  **SQL Server Integration**   Stores users & chat logs
+  **Jenkinsfile**              Windows-based MSBuild pipeline
+
+------------------------------------------------------------------------
+
+## Features
+
+### High Performance Networking (IOCP)
+
+-   Asynchronous TCP sockets\
+-   Efficient completion port threading model\
+-   Highly scalable for many concurrent users
+
+### SQL Server Support
+
+Connection settings stored in:
+
+    Server/conf/SqlConnection.properties
+
+Database schema:
+
+    Chat/chatTable.sql
+
+### Automated Bot Client
+
+Useful for: - Load testing - Repetitive workflow tests - Simulating
+large user groups
+
+### CI/CD with Jenkins
+
+-   Windows-based build pipeline using `Jenkinsfile`
+-   Compatible with MSBuild 2026 toolset
+
+------------------------------------------------------------------------
+
+## Repository Structure
+
+    /Server                     — Visual Studio 2026 chat server project
+    /Client                     — Console client
+    /BClient                    — Bot client
+    /Chat                       — Shared protocol definitions
+    /Chat/chatTable.sql         — SQL Server schema
+    README.md                   — Documentation
+    Jenkinsfile                 — Jenkins CI pipeline
+
+------------------------------------------------------------------------
+
+## Requirements
+
+### Software
+
+-   **Windows 10 / Windows 11**
+-   **Visual Studio 2026**
+    -   MSVC v146 Toolset\
+    -   Windows SDK 10.0+
+-   **SQL Server 2017+**
+-   **Git (optional, for Jenkins builds)**
+
+### Development Environment
+
+Ensure the following VS2026 workloads are installed:
+
+-   ✔ Desktop development with C++\
+-   ✔ Windows 10/11 SDK\
+-   ✔ MSVC v146 compiler
+
+------------------------------------------------------------------------
+
+## Build & Run Instructions
+
+### 1️. Prepare SQL Server
+
+1.  Create a database.
+2.  Run:
+
+```{=html}
+<!-- -->
 ```
-Configuration format: application (.exe)
+    Chat/chatTable.sql
 
-Windows SDK Version: 10.0
+3.  Configure DB connection:
 
-Platform Toolset: Align with Visual Studio 2026 (v145)
-
-Configuration: Release
-
-Platform: x64
-
-Warning level: level 3 (/W3)
-
-SDL Check: No (/sdl)
+```{=html}
+<!-- -->
 ```
+    Server/conf/SqlConnection.properties
 
-### BClient, Client build on Visual Studio 2026
-* Open BClient.sln and Client.sln respectively
-* In Visual Studio 2026 project configuration properties
+Example:
 
-```
-Configuration format: application (.exe)
+    DB_HOST=127.0.0.1
+    DB_USER=sa
+    DB_PASSWORD=your_password
+    DB_NAME=chatdb
 
-Windows SDK Version: 10.0
+------------------------------------------------------------------------
 
-Platform Toolset: Align with Visual Studio 2026 (v145)
+### 2️. Build the Server / Client / Bot
 
-Configuration: Release
+Open each `.sln` in **Visual Studio 2026**:
 
-Platform: x64
+-   `Server/Server.sln`
+-   `Client/Client.sln`
+-   `BClient/BClient.sln`
 
-Warning level: level 3 (/W3)
+Build:
 
-SDL Check: No (/sdl)
-```
+    Configuration: Release
+    Platform: x64
+
+------------------------------------------------------------------------
+
+### 3️. Run the Server
+
+    Server.exe
+
+You should see:
+
+    Server ready listen
+    port number : xxxx
+    Server CPU num : xx
+
+------------------------------------------------------------------------
+
+### 4️. Run Clients
+
+Start one or more:
+
+    Client.exe
+    BClient.exe
+
+They will connect to the server and begin communication.
+
+------------------------------------------------------------------------
+
+## Bot Client Usage
+
+The Bot Client (`BClient`) is capable of:
+
+-   Auto-login\
+-   Auto-message sending\
+-   Load testing with many parallel bots
+
+This allows verifying server stability under heavy traffic.
+
+------------------------------------------------------------------------
+
+##Jenkins CI Integration
+
+Included `Jenkinsfile` supports automated builds on Windows:
+
+-   Git checkout\
+-   MSBuild compile\
+-   Artifact generation
+
+Configure Jenkins agent with:
+
+-   Visual Studio 2026 Build Tools\
+-   Git\
+-   Windows Server 2019/2022 or Windows 11
+
+------------------------------------------------------------------------
+
+## Why IOCP?
+
+IOCP allows:
+
+-   High concurrency with fewer threads\
+-   Low CPU usage\
+-   Efficient overlapped I/O\
+-   Ideal for chat servers, game servers, and streaming servers
+
