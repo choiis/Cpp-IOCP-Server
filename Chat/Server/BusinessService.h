@@ -1,4 +1,4 @@
-/*
+ï»¿/*
  * BusinessService.h
  *
  *  Created on: 2019. 1. 17.
@@ -14,163 +14,168 @@
 #include <map>
 #include <string>
 #include <queue>
-#include <direct.h>
 #include <mutex>
+#include <condition_variable>
+#include <atomic>
+
+#include <direct.h>
+
 #include "IocpService.h"
 #include "FileService.h"
 #include "Dao.h"
 
-// ¼­¹ö¿¡ Á¢¼ÓÇÑ À¯Àú Á¤º¸
-// client ¼ÒÄÏ¿¡ ´ëÀÀÇÏ´Â ¼¼¼ÇÁ¤º¸
+ // ì„œë²„ì— ì ‘ì†í•œ ìœ ì € ì •ë³´
+ // client ì†Œì¼“ì— ëŒ€ì‘í•˜ëŠ” ì„¸ì…˜ì •ë³´
 typedef struct { // socket info
-	char userName[NAME_SIZE];
-	char roomName[NAME_SIZE];
-	char userId[NAME_SIZE];
-	ClientStatus status;
-} PER_HANDLE_DATA, *LPPER_HANDLE_DATA;
-
+    char userName[NAME_SIZE];
+    char roomName[NAME_SIZE];
+    char userId[NAME_SIZE];
+    ClientStatus status;
+} PER_HANDLE_DATA, * LPPER_HANDLE_DATA;
 
 namespace BusinessService {
 
-class BusinessService {
-private:
-	// Áßº¹·Î±×ÀÎ ¹æÁö¿¡ ¾²ÀÏ ±¸Á¶Ã¼
-	unordered_set<string> idSet;
-	// ¼­¹ö¿¡ Á¢¼ÓÇÑ À¯Àú ÀÚ·á ÀúÀå
-	unordered_map<SOCKET, PER_HANDLE_DATA> userMap;
-	// ¼­¹öÀÇ ¹æ Á¤º¸ ÀúÀå
-	map<string, shared_ptr<ROOM_DATA>> roomMap;
+    class BusinessService {
+    private:
+        // ì¤‘ë³µë¡œê·¸ì¸ ë°©ì§€ì— ì“°ì¼ êµ¬ì¡°ì²´
+        std::unordered_set<std::string> idSet;
 
+        // ì„œë²„ì— ì ‘ì†í•œ ìœ ì € ìë£Œ ì €ì¥
+        std::unordered_map<SOCKET, PER_HANDLE_DATA> userMap;
 
-	queue<Send_DATA> sendQueue;
-	// ÀÓ°è¿µ¿ª¿¡ ÇÊ¿äÇÑ °´Ã¼
-	// Ä¿³Î¸ğµå ¾Æ´Ï¶ó À¯Àú¸ğµå¼öÁØ µ¿±âÈ­ »ç¿ëÇÒ ¿¹
-	// ÇÑ ÇÁ·Î¼¼½º³»ÀÇ µ¿±âÈ­ ÀÌ¹Ç·Î Å©¸®Æ¼ÄÃ¼½¼Ç »ç¿ë
+        // ì„œë²„ì˜ ë°© ì •ë³´ ì €ì¥
+        std::map<std::string, std::shared_ptr<ROOM_DATA>> roomMap;
 
-	// idMap µ¿±âÈ­
-	CRITICAL_SECTION idCs;
-	// userMap µ¿±âÈ­
-	mutex userCs;
-	// roomMap µ¿±âÈ­
-	CRITICAL_SECTION roomCs;
-	
-	// sendQueue µ¿±âÈ­
-	mutex sendCs;
+        // Send Queue
+        std::queue<Send_DATA> sendQueue;
 
-	// Á¢¼Ó²÷¾îÁø socketÀº Send¿¡¼­ Á¦¿Ü
-	// UDP Àü¼Û Case¶§¹®¿¡ °¢ Å¬¶óÀÌ¾ğÆ® socketÀÇ IPµµ ÀúÀåÇÑ´Ù
-	map<SOCKET, string> liveSocket;
+        // idSet ë™ê¸°í™” (CRITICAL_SECTION)
+        CRITICAL_SECTION idCs;
 
-	mutex liveSocketCs;
+        // userMap ë™ê¸°í™”
+        std::mutex userCs;
 
-	IocpService::IocpService *iocpService;
+        // roomMap ë™ê¸°í™” (CRITICAL_SECTION)
+        CRITICAL_SECTION roomCs;
 
-	FileService::FileService *fileService;
+        // sendQueue ë™ê¸°í™” + condition_variable
+        std::mutex sendCs;
+        std::condition_variable sendCv;          // âœ… ì¶”ê°€
+        std::atomic<bool> sendStop{ false };       // âœ… ì„ íƒ(ì¢…ë£Œ ì§€ì›)
 
-	BusinessService(const BusinessService& rhs) = delete;
-	void operator=(const BusinessService& rhs) = delete;
-	BusinessService(BusinessService&& rhs) = delete;
-	// ·Î±×ÀÎ ÀÌÀü ·ÎÁ÷Ã³¸®
-	// ¼¼¼Ç°ª ¾øÀ» ¶§ ·ÎÁ÷
-	void StatusLogout(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-	// ´ë±â½Ç¿¡¼­ÀÇ ·ÎÁ÷ Ã³¸®
-	// ¼¼¼Ç°ª ÀÖÀ½
-	void StatusWait(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-	// Ã¤ÆÃ¹æ¿¡¼­ÀÇ ·ÎÁ÷ Ã³¸®
-	// ¼¼¼Ç°ª ÀÖÀ½
-	void StatusChat(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+        // ì ‘ì†ëŠì–´ì§„ socketì€ Sendì—ì„œ ì œì™¸
+        // UDP ì „ì†¡ Caseë•Œë¬¸ì— ê° í´ë¼ì´ì–¸íŠ¸ socketì˜ IPë„ ì €ì¥í•œë‹¤
+        std::map<SOCKET, std::string> liveSocket;
+        std::mutex liveSocketCs;
 
+        IocpService::IocpService* iocpService;
+        FileService::FileService* fileService;
 
-	// °èÁ¤¸¸µé±â
-	void UserMake(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-	// À¯ÀúÀÔÀå
-	void UserEnter(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+        BusinessService(const BusinessService& rhs) = delete;
+        void operator=(const BusinessService& rhs) = delete;
+        BusinessService(BusinessService&& rhs) = delete;
 
-	// ¹æ ¸¸µé±â ±â´É
-	void RoomMake(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-	// ¹æ µé¾î°¡±â
-	void RoomEnter(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+        // ë¡œê·¸ì¸ ì´ì „ ë¡œì§ì²˜ë¦¬
+        void StatusLogout(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	// ±Ó¼Ó¸»
-	void Whisper(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-	// ¹æ Á¤º¸
-	void RoomInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-	// À¯Àú ¹æ Á¤º¸
-	void RoomUserInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-	// Ä£±¸Á¤º¸ ¿äÃ»
-	void FriendInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-	// Ä£±¸Ãß°¡ ±â´É
-	void FriendAdd(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-	// Ä£±¸¿¡°Ô °¡±â
-	void FriendGo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
-	// Ä£±¸»èÁ¦
-	void FriendDelete(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+        // ëŒ€ê¸°ì‹¤ì—ì„œì˜ ë¡œì§ ì²˜ë¦¬
+        void StatusWait(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	void (BusinessService::*func[4])(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+        // ì±„íŒ…ë°©ì—ì„œì˜ ë¡œì§ ì²˜ë¦¬
+        void StatusChat(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	// °èÁ¤¸¸µé±â
-	void (BusinessService::* directionFunc[13])(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+        // ê³„ì •ë§Œë“¤ê¸°
+        void UserMake(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-public:
+        // ìœ ì €ì…ì¥
+        void UserEnter(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	void callFuncPointer(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+        // ë°© ë§Œë“¤ê¸° ê¸°ëŠ¥
+        void RoomMake(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	// »ı¼ºÀÚ
-	BusinessService();
-	// ¼Ò¸êÀÚ
-	virtual ~BusinessService();
-	
-	// SendThread¿¡¼­ µ¿ÀÛÇÒ ºÎºĞ
-	void Sendwork();
-	// InsertSendQueue °øÅëÈ­
-	void InsertSendQueue(SendTo direction, const string& msg, const string& roomName, SOCKET socket, ClientStatus status);
-	// ÃÊ±â ·Î±×ÀÎ
-	// ¼¼¼ÇÁ¤º¸ Ãß°¡
-	void InitUser(const char *id, SOCKET sock ,const char *nickName);
-	// Á¢¼Ó °­Á¦Á¾·á ·ÎÁ÷
-	void ClientExit(SOCKET sock);
+        // ë°© ë“¤ì–´ê°€ê¸°
+        void RoomEnter(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	// Å¬¶óÀÌ¾ğÆ®¿¡°Ô ¹ŞÀº µ¥ÀÌÅÍ º¹»çÈÄ ±¸Á¶Ã¼ ÇØÁ¦
-	string DataCopy(LPPER_IO_DATA ioInfo, ClientStatus *status, Direction *direction);
-	// ÆĞÅ¶ µ¥ÀÌÅÍ ÀĞ±â
-	short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans);
+        // ê·“ì†ë§
+        void Whisper(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	// Å¬¶óÀÌ¾ğÆ®ÀÇ »óÅÂÁ¤º¸ ¹İÈ¯
-	ClientStatus GetStatus(SOCKET sock);
-	
-	// ¿¬°áÁß socket Insert
-	void InsertLiveSocket(const SOCKET& hClientSock, const SOCKADDR_IN& addr);
-	// socket Á×¾ú´ÂÁö È®ÀÎ
-	bool IsSocketDead(SOCKET socket);
-	// node ¼­¹ö¿¡¼­ °­ÅğÇÏ±â
-	void BanUser(SOCKET socket, const char* nickName);
-	// node ¼­¹ö·Î ·Î±×ÀÎ À¯Àú¼ö ¹İÈ¯
-	void CallCnt(SOCKET socket, const DWORD& cnt);
+        // ë°© ì •ë³´
+        void RoomInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	const unordered_set<string>& getIdSet() const {
-		return idSet;
-	}
+        // ìœ ì € ë°© ì •ë³´
+        void RoomUserInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	const map<string, std::shared_ptr<ROOM_DATA>>& getRoomMap() const {
-		return roomMap;
-	}
+        // ì¹œêµ¬ì •ë³´ ìš”ì²­
+        void FriendInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	const unordered_map<SOCKET, PER_HANDLE_DATA>& getUserMap() const {
-		return userMap;
-	}
+        // ì¹œêµ¬ì¶”ê°€ ê¸°ëŠ¥
+        void FriendAdd(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	IocpService::IocpService* getIocpService() ;
+        // ì¹œêµ¬ì—ê²Œ ê°€ê¸°
+        void FriendGo(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	const CRITICAL_SECTION& getIdCs() const {
-		return idCs;
-	}
+        // ì¹œêµ¬ì‚­ì œ
+        void FriendDelete(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-	const CRITICAL_SECTION& getRoomCs() const {
-		return roomCs;
-	}
+        void (BusinessService::* func[4])(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-};
+        void (BusinessService::* directionFunc[13])(SOCKET sock, ClientStatus status, Direction direction, const char* message);
 
-} /* namespace Service */
+    public:
+        // ìƒì„±ì/ì†Œë©¸ì
+        BusinessService();
+        virtual ~BusinessService();
+
+        void callFuncPointer(SOCKET sock, ClientStatus status, Direction direction, const char* message);
+
+        // âœ… SendThreadì—ì„œ ë™ì‘í•  ë¶€ë¶„ (CV ê¸°ë°˜ìœ¼ë¡œ ìµœì í™”)
+        void Sendwork();
+
+        // InsertSendQueue ê³µí†µí™” (push + notify)
+        void InsertSendQueue(SendTo direction, const std::string& msg, const std::string& roomName,
+            SOCKET socket, ClientStatus status);
+
+        // (ì„ íƒ) ì„œë²„ ì¢…ë£Œ ì‹œ SendThread ê¹¨ìš°ê¸° ìš©
+        void StopSendWorker();
+
+        // ì´ˆê¸° ë¡œê·¸ì¸ (ì„¸ì…˜ì •ë³´ ì¶”ê°€)
+        void InitUser(const char* id, SOCKET sock, const char* nickName);
+
+        // ì ‘ì† ì¢…ë£Œ ë¡œì§
+        void ClientExit(SOCKET sock);
+
+        // í´ë¼ì´ì–¸íŠ¸ì—ê²Œ ë°›ì€ ë°ì´í„° ë³µì‚¬í›„ êµ¬ì¡°ì²´ í•´ì œ
+        std::string DataCopy(LPPER_IO_DATA ioInfo, ClientStatus* status, Direction* direction);
+
+        // íŒ¨í‚· ë°ì´í„° ì½ê¸°
+        short PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans);
+
+        // í´ë¼ì´ì–¸íŠ¸ì˜ ìƒíƒœì •ë³´ ë°˜í™˜
+        ClientStatus GetStatus(SOCKET sock);
+
+        // ì—°ê²°ì¤‘ socket Insert
+        void InsertLiveSocket(const SOCKET& hClientSock, const SOCKADDR_IN& addr);
+
+        // socket ì£½ì—ˆëŠ”ì§€ í™•ì¸ (liveSocketCsë¡œ ë³´í˜¸)
+        bool IsSocketDead(SOCKET socket);
+
+        // node ì„œë²„ì—ì„œ ê°•í‡´í•˜ê¸°
+        void BanUser(SOCKET socket, const char* nickName);
+
+        // node ì„œë²„ë¡œ ë¡œê·¸ì¸ ìœ ì €ìˆ˜ ë°˜í™˜
+        void CallCnt(SOCKET socket, const DWORD& cnt);
+
+        // getters
+        const std::unordered_set<std::string>& getIdSet() const { return idSet; }
+        const std::map<std::string, std::shared_ptr<ROOM_DATA>>& getRoomMap() const { return roomMap; }
+        const std::unordered_map<SOCKET, PER_HANDLE_DATA>& getUserMap() const { return userMap; }
+
+        IocpService::IocpService* getIocpService();
+
+        const CRITICAL_SECTION& getIdCs() const { return idCs; }
+        const CRITICAL_SECTION& getRoomCs() const { return roomCs; }
+    };
+
+} /* namespace BusinessService */
 
 #endif /* BUSINESSSERVICE_H_ */

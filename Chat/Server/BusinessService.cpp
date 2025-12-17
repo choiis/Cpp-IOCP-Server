@@ -1,4 +1,4 @@
-/*
+ï»¿/*
 * BusinessService.cpp
 *
 *  Created on: 2019. 1. 17.
@@ -11,7 +11,7 @@ namespace BusinessService {
 
 	BusinessService::BusinessService() {
 
-		// ÀÓ°è¿µ¿ª Object »ı¼º
+		// ì„ê³„ì˜ì—­ Object ìƒì„±
 		InitializeCriticalSection(&idCs);
 
 		InitializeCriticalSection(&roomCs);
@@ -45,7 +45,7 @@ namespace BusinessService {
 
 		delete fileService;
 
-		// ÀÓ°è¿µ¿ª Object ¹İÈ¯
+		// ì„ê³„ì˜ì—­ Object ë°˜í™˜
 		DeleteCriticalSection(&idCs);
 
 		DeleteCriticalSection(&roomCs);
@@ -60,118 +60,117 @@ namespace BusinessService {
 	
 
 	void BusinessService::Sendwork() {
+		std::queue<Send_DATA> localQueue;
 
-		Send_DATA sendData;
-		if (!sendQueue.empty()) {
+		{
+			std::unique_lock<std::mutex> lock(sendCs);
 
-			queue<Send_DATA> copySendQueue;
-			{
-				lock_guard<mutex> guard(sendCs);  // LockÃÖ¼ÒÈ­
-				copySendQueue = sendQueue;
-				queue<Send_DATA> emptyQueue; // ºó Å¥
-				swap(sendQueue, emptyQueue); // ºó Å¥·Î ¹Ù²ãÄ¡±â
+			// âœ… í•  ì¼ ì—†ìœ¼ë©´ block
+			sendCv.wait(lock, [&] {
+				return sendStop.load(std::memory_order_relaxed) || !sendQueue.empty();
+			});
+
+			// (ì„ íƒ) ì¢…ë£Œ ì§€ì›
+			if (sendStop.load(std::memory_order_relaxed) && sendQueue.empty()) {
+				return;
 			}
 
-			while (!copySendQueue.empty()) { // ¿©·¯ ÆĞÅ¶ µ¥ÀÌÅÍ ÇÑ²¨¹ø¿¡ Ã³¸®
-				Send_DATA sendData = copySendQueue.front();
-				copySendQueue.pop();
-				
-				switch (sendData.direction)
-				{
-				case SendTo::SEND_ME: // Send to One
-					iocpService->SendToOneMsg(sendData.msg.c_str(), sendData.mySocket, sendData.status);
-					break;
-				case SendTo::SEND_ROOM: // Send to Room
-					// LockCount°¡ ÀÖÀ» ¶§ => ¹æ ¸®½ºÆ®°¡ »ì¾ÆÀÖÀ» ¶§
-				{
-					EnterCriticalSection(&roomCs);
-					auto iter = roomMap.find(sendData.roomName);
-					shared_ptr<ROOM_DATA> second = nullptr;
-					if (iter != roomMap.end()) {
-						second = iter->second;
-					}
-					LeaveCriticalSection(&roomCs);
+			// âœ… ë³µì‚¬ ëŒ€ì‹  O(1) swap
+			sendQueue.swap(localQueue);
+		} // lock í•´ì œ
 
-					if (second != nullptr) {
-						lock_guard<recursive_mutex> guard(second->listCs);
-						iocpService->SendToRoomMsg(sendData.msg.c_str(), second->userList, sendData.status);
-					}
-					break;
+		while (!localQueue.empty()) {
+			Send_DATA sendData = std::move(localQueue.front());
+			localQueue.pop();
+
+			switch (sendData.direction) {
+			case SendTo::SEND_ME:
+				iocpService->SendToOneMsg(sendData.msg.c_str(), sendData.mySocket, sendData.status);
+				break;
+
+			case SendTo::SEND_ROOM: {
+				EnterCriticalSection(&roomCs);
+				auto iter = roomMap.find(sendData.roomName);
+				std::shared_ptr<ROOM_DATA> room = (iter != roomMap.end()) ? iter->second : nullptr;
+				LeaveCriticalSection(&roomCs);
+
+				if (room != nullptr) {
+					std::lock_guard<std::recursive_mutex> guard(room->listCs);
+					iocpService->SendToRoomMsg(sendData.msg.c_str(), room->userList, sendData.status);
 				}
-				case SendTo::SEND_FILE:
-				{
-					 string dir = sendData.msg;
-					 FILE* fp = fopen(dir.c_str(), "rb");
-					if (fp == NULL) {
-						cout << "ÆÄÀÏ ¿­±â ½ÇÆĞ" << endl;
-						return;
-					}
+				break;
+			}
 
-					int idx;
-					while ((idx = static_cast<int>(dir.find("/"))) != -1) { // ÆÄÀÏ¸í¸¸ ÃßÃâ
-						dir.erase(0, idx + 1);
-					}
-
-					EnterCriticalSection(&roomCs);
-					auto iter = roomMap.find(sendData.roomName);
-					shared_ptr<ROOM_DATA> second = nullptr;
-					if (iter != roomMap.end()) {
-						second = iter->second;
-					}
-					LeaveCriticalSection(&roomCs);
-
-					// °¢ ¹æÀÇ CS
-					if (second != nullptr) {
-						lock_guard<recursive_mutex> guard(second->listCs);
-						fileService->SendToRoomFile(fp, dir, second, liveSocket);
-					}
-					fclose(fp);
-					break;
+			case SendTo::SEND_FILE: {
+				std::string path = sendData.msg;
+				FILE* fp = fopen(path.c_str(), "rb");
+				if (fp == NULL) {
+					std::cout << "íŒŒì¼ ì—´ê¸° ì‹¤íŒ¨" << std::endl;
+					break; // âœ… return ê¸ˆì§€
 				}
-				default:
-					break;
+
+				// íŒŒì¼ëª… ì¶”ì¶œ ( /, \ ë‘˜ ë‹¤ ì§€ì› )
+				std::string filename = path;
+				size_t pos = filename.find_last_of("/\\");
+				if (pos != std::string::npos) filename = filename.substr(pos + 1);
+
+				EnterCriticalSection(&roomCs);
+				auto iter = roomMap.find(sendData.roomName);
+				std::shared_ptr<ROOM_DATA> room = (iter != roomMap.end()) ? iter->second : nullptr;
+				LeaveCriticalSection(&roomCs);
+
+				if (room != nullptr) {
+					std::lock_guard<std::recursive_mutex> guard(room->listCs);
+					fileService->SendToRoomFile(fp, filename, room, liveSocket);
 				}
+
+				fclose(fp);
+				break;
+			}
+
+			default:
+				break;
 			}
 		}
-		else {
-		
-			Sleep(1);
-		}
-
 	}
 
-	// InsertSendQueue °øÅëÈ­
-	void BusinessService::InsertSendQueue(SendTo direction, const string& msg, const string& roomName, SOCKET socket, ClientStatus status) {
 
-		// SendQueue¿¡ Insert
+	// InsertSendQueue ê³µí†µí™”
+	void BusinessService::InsertSendQueue(SendTo direction, const std::string& msg,
+		const std::string& roomName, SOCKET socket,
+		ClientStatus status) {
 		Send_DATA sendData;
+
 		if (direction == SendTo::SEND_ME) {
 			sendData.direction = direction;
 			sendData.msg = msg;
 			sendData.mySocket = socket;
 			sendData.status = status;
 		}
-		else { //  SendTo::SEND_ROOM
+		else {
 			sendData.direction = direction;
 			sendData.msg = msg;
 			sendData.roomName = roomName;
 			sendData.status = status;
 		}
+
 		{
-			lock_guard<mutex> guard(sendCs);
-			sendQueue.push(sendData);
+			std::lock_guard<std::mutex> guard(sendCs);
+			sendQueue.push(std::move(sendData));
 		}
-	
+
+		// SendThread ê¹¨ìš°ê¸°
+		sendCv.notify_one();
 	}
 
-	// ÃÊ±â ·Î±×ÀÎ
-	// ¼¼¼ÇÁ¤º¸ Ãß°¡
+	// ì´ˆê¸° ë¡œê·¸ì¸
+	// ì„¸ì…˜ì •ë³´ ì¶”ê°€
 	void BusinessService::InitUser(const char *id, SOCKET sock, const char* nickName) {
 
 		string msg;
 
 		PER_HANDLE_DATA userInfo;
-		// À¯ÀúÀÇ »óÅÂ Á¤º¸ ÃÊ±âÈ­
+		// ìœ ì €ì˜ ìƒíƒœ ì •ë³´ ì´ˆê¸°í™”
 		userInfo.status = ClientStatus::STATUS_WAITING;
 
 		strncpy(userInfo.userId, id, NAME_SIZE);
@@ -179,33 +178,33 @@ namespace BusinessService {
 		strncpy(userInfo.userName, nickName, NAME_SIZE);
 
 		{
-			lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
-			// ¼¼¼ÇÁ¤º¸ insert
+			lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
+			// ì„¸ì…˜ì •ë³´ insert
 			this->userMap[sock] = userInfo;
 			cout << "START user : " << nickName << endl;
 			cout << "Now login user count : " << userMap.size() << endl;
 		}
 
-		LogVo vo; // DB SQL¹®¿¡ ÇÊ¿äÇÑ Data
+		LogVo vo; // DB SQLë¬¸ì— í•„ìš”í•œ Data
 		vo.setUserId(userInfo.userId);
 		vo.setNickName(userInfo.userName);
 		
-		Dao::GetInstance()->UpdateUser(vo);// ÃÖ±Ù ·Î±×ÀÎ±â·Ï ¾÷µ¥ÀÌÆ®
-		Dao::GetInstance()->InsertLogin(vo); // ·Î±×ÀÎ DB¿¡ ±â·Ï
+		Dao::GetInstance()->UpdateUser(vo);// ìµœê·¼ ë¡œê·¸ì¸ê¸°ë¡ ì—…ë°ì´íŠ¸
+		Dao::GetInstance()->InsertLogin(vo); // ë¡œê·¸ì¸ DBì— ê¸°ë¡
 		
 		msg = nickName;
-		msg.append("´Ô ÀÔÀåÀ» È¯¿µÇÕ´Ï´Ù!\n");
+		msg.append("ë‹˜ ì…ì¥ì„ í™˜ì˜í•©ë‹ˆë‹¤!\n");
 		msg.append(waitRoomMessage);
 		InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
 	}
 
-	// Á¢¼Ó °­Á¦Á¾·á ·ÎÁ÷
+	// ì ‘ì† ê°•ì œì¢…ë£Œ ë¡œì§
 	void BusinessService::ClientExit(SOCKET sock) {
 
 		if (closesocket(sock) != SOCKET_ERROR) {
-			cout << "Á¤»ó Á¾·á " << endl;
+			cout << "ì •ìƒ ì¢…ë£Œ " << endl;
 
-			// ÄÜ¼Ö °­Á¦Á¾·á Ã³¸®
+			// ì½˜ì†” ê°•ì œì¢…ë£Œ ì²˜ë¦¬
 			{
 				lock_guard<mutex> guard(liveSocketCs);
 				liveSocket.erase(sock);
@@ -213,7 +212,7 @@ namespace BusinessService {
 
 			if (userMap.find(sock) != userMap.end()) {
 
-				// ¼¼¼ÇÁ¤º¸ ÀÖÀ»¶§´Â => ¼¼¼ÇÁ¤º¸ ¹æ Á¤º¸ Á¦°Å ÇÊ¿ä
+				// ì„¸ì…˜ì •ë³´ ìˆì„ë•ŒëŠ” => ì„¸ì…˜ì •ë³´ ë°© ì •ë³´ ì œê±° í•„ìš”
 				char roomName[NAME_SIZE];
 				char name[NAME_SIZE];
 				char id[NAME_SIZE];
@@ -223,49 +222,49 @@ namespace BusinessService {
 				strncpy(name, userMap.find(sock)->second.userName, NAME_SIZE);
 				strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
 
-				// ·Î±×ÀÎ Set¿¡¼­ out
+				// ë¡œê·¸ì¸ Setì—ì„œ out
 				EnterCriticalSection(&idCs);
 				idSet.erase(id);
 				LeaveCriticalSection(&idCs);
 
-				// ¹æÀÌ¸§ ÀÓ½Ã ÀúÀå
-				if (userMap.find(sock)->second.status == ClientStatus::STATUS_CHATTIG) { // ¹æ¿¡ Á¢¼ÓÁßÀÎ °æ¿ì
+				// ë°©ì´ë¦„ ì„ì‹œ ì €ì¥
+				if (userMap.find(sock)->second.status == ClientStatus::STATUS_CHATTIG) { // ë°©ì— ì ‘ì†ì¤‘ì¸ ê²½ìš°
 					string sendMsg;
 					string roomName;
 					sendMsg = name;
-					sendMsg += " ´ÔÀÌ ³ª°¬½À´Ï´Ù!";
+					sendMsg += " ë‹˜ì´ ë‚˜ê°”ìŠµë‹ˆë‹¤!";
 
-					// ¹æÀÌ¸§ ÀÓ½Ã ÀúÀå
+					// ë°©ì´ë¦„ ì„ì‹œ ì €ì¥
 					roomName = string(userMap.find(sock)->second.roomName);
 
-					// °³º° ÅğÀå½Ã¿¡´Â Room List °³º° Lock¸¸
+					// ê°œë³„ í‡´ì¥ì‹œì—ëŠ” Room List ê°œë³„ Lockë§Œ
 					{
 						lock_guard<recursive_mutex> guard(roomMap.find(roomName)->second->listCs);
-						// ³ª°¥¶§´Â Áï½Ã BoardCast
+						// ë‚˜ê°ˆë•ŒëŠ” ì¦‰ì‹œ BoardCast
 						iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
 
-						roomMap.find(roomName)->second->userList.remove(sock); // ³ª°¡´Â »ç¶÷ Á¤º¸ out
-						// Room List °³º° Lock¸¸
+						roomMap.find(roomName)->second->userList.remove(sock); // ë‚˜ê°€ëŠ” ì‚¬ëŒ ì •ë³´ out
+						// Room List ê°œë³„ Lockë§Œ
 					}
 					
 					{
-						lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
-						strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // ¹æÀÌ¸§ ÃÊ±âÈ­
-						userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // »óÅÂ º¯°æ
+						lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
+						strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // ë°©ì´ë¦„ ì´ˆê¸°í™”
+						userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // ìƒíƒœ ë³€ê²½
 					}
 
-					// room LockÀº ¹æ ¿ÏÀü »èÁ¦½Ã ¿¡¸¸
+					// room Lockì€ ë°© ì™„ì „ ì‚­ì œì‹œ ì—ë§Œ
 					EnterCriticalSection(&roomCs);
 					if (roomMap.find(roomName) != roomMap.end()) {
-						if ((roomMap.find(roomName)->second)->userList.size() == 0) { // ¹æÀÎ¿ø 0¸íÀÌ¸é ¹æ »èÁ¦
+						if ((roomMap.find(roomName)->second)->userList.size() == 0) { // ë°©ì¸ì› 0ëª…ì´ë©´ ë°© ì‚­ì œ
 							roomMap.erase(roomName);
 						}
 					}
 					LeaveCriticalSection(&roomCs);
 				}
 				{
-					lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
-					userMap.erase(sock); // Á¢¼Ó ¼ÒÄÏ Á¤º¸ »èÁ¦
+					lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
+					userMap.erase(sock); // ì ‘ì† ì†Œì¼“ ì •ë³´ ì‚­ì œ
 					cout << "Now login user count : " << userMap.size() << endl;
 				}
 
@@ -274,21 +273,21 @@ namespace BusinessService {
 		}
 	}
 
-	// ·Î±×ÀÎ ÀÌÀü ·ÎÁ÷Ã³¸®
-	// ¼¼¼Ç°ª ¾øÀ» ¶§ ·ÎÁ÷
+	// ë¡œê·¸ì¸ ì´ì „ ë¡œì§ì²˜ë¦¬
+	// ì„¸ì…˜ê°’ ì—†ì„ ë•Œ ë¡œì§
 	void BusinessService::StatusLogout(SOCKET sock, ClientStatus status, Direction direction, const char *message) {
 
 		string msg = "";
 
-		if (direction == Direction::USER_MAKE || direction == Direction::USER_ENTER) { // 1¹ø °èÁ¤»ı¼º 2¹ø ·Î±×ÀÎ ½Ãµµ
+		if (direction == Direction::USER_MAKE || direction == Direction::USER_ENTER) { // 1ë²ˆ ê³„ì •ìƒì„± 2ë²ˆ ë¡œê·¸ì¸ ì‹œë„
 
 			(this->*directionFunc[direction])(sock, status, direction, message);
 		}
 		else if (direction == Direction::EXIT) {
-			// Á¤»óÁ¾·á
+			// ì •ìƒì¢…ë£Œ
 			exit(EXIT_SUCCESS);
 		}
-		else { // ±×¿Ü ¸í·É¾î ÀÔ·Â
+		else { // ê·¸ì™¸ ëª…ë ¹ì–´ ì…ë ¥
 			string sendMsg = errorMessage;
 			sendMsg += loginBeforeMessage;
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_LOGOUT);
@@ -296,14 +295,14 @@ namespace BusinessService {
 
 	}
 
-	// ´ë±â½Ç¿¡¼­ÀÇ ·ÎÁ÷ Ã³¸®
-	// ¼¼¼Ç°ª ÀÖÀ½
+	// ëŒ€ê¸°ì‹¤ì—ì„œì˜ ë¡œì§ ì²˜ë¦¬
+	// ì„¸ì…˜ê°’ ìˆìŒ
 	void BusinessService::StatusWait(SOCKET sock, ClientStatus status, Direction direction, const char *message) {
 
 		string name = userMap.find(sock)->second.userName;
 		string id = userMap.find(sock)->second.userId;
 		string msg = string(message);
-		// ¼¼¼Ç¿¡¼­ ÀÌ¸§ Á¤º¸ ¸®ÅÏ
+		// ì„¸ì…˜ì—ì„œ ì´ë¦„ ì •ë³´ ë¦¬í„´
 		if (direction == -1) {
 			return;
 		}
@@ -314,110 +313,110 @@ namespace BusinessService {
 			(this->*directionFunc[direction])(sock, status, direction, message);
 		
 		}
-		else if (direction == Direction::LOG_OUT) { // ·Î±×¾Æ¿ô
+		else if (direction == Direction::LOG_OUT) { // ë¡œê·¸ì•„ì›ƒ
 			char id[NAME_SIZE];
 			EnterCriticalSection(&idCs);
 			strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
-			idSet.erase(userMap.find(sock)->second.userId); // ·Î±×ÀÎ ¼Â¿¡¼­ Á¦¿Ü
+			idSet.erase(userMap.find(sock)->second.userId); // ë¡œê·¸ì¸ ì…‹ì—ì„œ ì œì™¸
 			LeaveCriticalSection(&idCs);
 
 			{
-				lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
-				userMap.erase(sock); // Á¢¼Ó ¼ÒÄÏ Á¤º¸ »èÁ¦
+				lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
+				userMap.erase(sock); // ì ‘ì† ì†Œì¼“ ì •ë³´ ì‚­ì œ
 				cout << "Now login user count : " << userMap.size() << endl;
 			}
 
 			string sendMsg = loginBeforeMessage;
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_LOGOUT);
 		}
-		else if (direction == Direction::USER_GOOD_INFO) { // ÀÎ±âµµ Á¶È¸
+		else if (direction == Direction::USER_GOOD_INFO) { // ì¸ê¸°ë„ ì¡°íšŒ
 			
 		}
-		else { // ±×¿Ü ¸í·É¾î ÀÔ·Â
+		else { // ê·¸ì™¸ ëª…ë ¹ì–´ ì…ë ¥
 			string sendMsg = errorMessage;
 			sendMsg += waitRoomMessage;
-			// ´ë±â¹æÀÇ ¿À·ùÀÌ¹Ç·Î ClientStatus::STATUS_WAITING »óÅÂ·Î Àü´ŞÇÑ´Ù
+			// ëŒ€ê¸°ë°©ì˜ ì˜¤ë¥˜ì´ë¯€ë¡œ ClientStatus::STATUS_WAITING ìƒíƒœë¡œ ì „ë‹¬í•œë‹¤
 
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 		}
 
-		LogVo vo; // DB SQL¹®¿¡ ÇÊ¿äÇÑ Data
+		LogVo vo; // DB SQLë¬¸ì— í•„ìš”í•œ Data
 		vo.setNickName(name.c_str());
 		vo.setMsg(message);
 		vo.setDirection(direction);
 		vo.setStatus(status);
-		Dao::GetInstance()->InsertDirection(vo);  // Áö½Ã ±â·Ï insert
+		Dao::GetInstance()->InsertDirection(vo);  // ì§€ì‹œ ê¸°ë¡ insert
 		
 	}
 
-	// Ã¤ÆÃ¹æ¿¡¼­ÀÇ ·ÎÁ÷ Ã³¸®
-	// ¼¼¼Ç°ª ÀÖÀ½
+	// ì±„íŒ…ë°©ì—ì„œì˜ ë¡œì§ ì²˜ë¦¬
+	// ì„¸ì…˜ê°’ ìˆìŒ
 	void BusinessService::StatusChat(SOCKET sock, ClientStatus status, Direction direction, const char *message) {
 
 		string name;
 		string msg;
 		string id;
-		// ¼¼¼Ç¿¡¼­ ÀÌ¸§ Á¤º¸ ¸®ÅÏ
+		// ì„¸ì…˜ì—ì„œ ì´ë¦„ ì •ë³´ ë¦¬í„´
 		name = userMap.find(sock)->second.userName;
 		id = userMap.find(sock)->second.userId;
 		msg = string(message);
 
-		if (msg.compare("\\out") == 0) { // Ã¤ÆÃ¹æ ³ª°¨
+		if (msg.compare("\\out") == 0) { // ì±„íŒ…ë°© ë‚˜ê°
 
 			string sendMsg;
 			string roomName;
 			sendMsg = name;
-			sendMsg += " ´ÔÀÌ ³ª°¬½À´Ï´Ù!";
+			sendMsg += " ë‹˜ì´ ë‚˜ê°”ìŠµë‹ˆë‹¤!";
 
-			// ¹æÀÌ¸§ ÀÓ½Ã ÀúÀå
+			// ë°©ì´ë¦„ ì„ì‹œ ì €ì¥
 			roomName = string(userMap.find(sock)->second.roomName);
 
-			// °³º° ÅğÀå½Ã¿¡´Â Room List °³º° Lock¸¸
+			// ê°œë³„ í‡´ì¥ì‹œì—ëŠ” Room List ê°œë³„ Lockë§Œ
 			{
 				lock_guard<recursive_mutex> guard(roomMap.find(roomName)->second->listCs);
-				// ³ª°¥¶§´Â Áï½Ã BoardCast
+				// ë‚˜ê°ˆë•ŒëŠ” ì¦‰ì‹œ BoardCast
 				iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
 
-				roomMap.find(roomName)->second->userList.remove(sock); // ³ª°¡´Â »ç¶÷ Á¤º¸ out
+				roomMap.find(roomName)->second->userList.remove(sock); // ë‚˜ê°€ëŠ” ì‚¬ëŒ ì •ë³´ out
 			}
-			// Room List °³º° Lock¸¸
+			// Room List ê°œë³„ Lockë§Œ
 
 			msg = waitRoomMessage;
 			InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
 
 			{
-				lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­ // ·Î±×ÀÎµÈ »ç¿ëÀÚÁ¤º¸ º¯°æ Lock
-				strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // ¹æÀÌ¸§ ÃÊ±âÈ­
-				userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // »óÅÂ º¯°æ
+				lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™” // ë¡œê·¸ì¸ëœ ì‚¬ìš©ìì •ë³´ ë³€ê²½ Lock
+				strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // ë°©ì´ë¦„ ì´ˆê¸°í™”
+				userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // ìƒíƒœ ë³€ê²½
 			}
 
-			// room LockÀº ¹æ ¿ÏÀü »èÁ¦½Ã ¿¡¸¸
+			// room Lockì€ ë°© ì™„ì „ ì‚­ì œì‹œ ì—ë§Œ
 			EnterCriticalSection(&roomCs);
 			if (roomMap.find(roomName) != roomMap.end()) {
-				if ((roomMap.find(roomName)->second)->userList.size() == 0) { // ¹æÀÎ¿ø 0¸íÀÌ¸é ¹æ »èÁ¦
+				if ((roomMap.find(roomName)->second)->userList.size() == 0) { // ë°©ì¸ì› 0ëª…ì´ë©´ ë°© ì‚­ì œ
 					roomMap.erase(roomName);
 				}
 			}
 			LeaveCriticalSection(&roomCs);
 		}
-		else if (msg.find("\\add") != -1) { // Ä£±¸Ãß°¡
+		else if (msg.find("\\add") != -1) { // ì¹œêµ¬ì¶”ê°€
 
-			msg.erase(0, 5); // Ä£±¸ ÀÌ¸§ ¹İÈ¯
-			// Ä£±¸Ãß°¡
+			msg.erase(0, 5); // ì¹œêµ¬ ì´ë¦„ ë°˜í™˜
+			// ì¹œêµ¬ì¶”ê°€
 			//FriendAdd(sock, msg, id, ClientStatus::STATUS_CHATTIG);
 		}
-		else if (direction == USER_GOOD) { // ÀÎ±âµµ
+		else if (direction == USER_GOOD) { // ì¸ê¸°ë„
 
 		}
 		else if (direction == FILE_SEND) {
 			string fileDir = move(fileService->RecvFile(sock, string(userMap.find(sock)->second.userName)));
 
-			// SendQueue¿¡ Insert
+			// SendQueueì— Insert
 			InsertSendQueue(SendTo::SEND_ROOM, "", userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
-			// ¿©±â¼­ºÎÅÍ UDP BroadCast
+			// ì—¬ê¸°ì„œë¶€í„° UDP BroadCast
 			InsertSendQueue(SendTo::SEND_FILE, fileDir.c_str(), userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_FILE_SEND);
 		}
-		else { // Ã¤ÆÃ¹æ¿¡¼­ Ã¤ÆÃÁß
+		else { // ì±„íŒ…ë°©ì—ì„œ ì±„íŒ…ì¤‘
 
 			string sendMsg;
 			sendMsg = name;
@@ -429,17 +428,17 @@ namespace BusinessService {
 			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
 			map<string, shared_ptr<ROOM_DATA>>::iterator it;
 			{
-				lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
+				lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
 				it = roomMap.find(
 					userMap.find(sock)->second.roomName);
 				strncpy(roomName, userMap.find(sock)->second.roomName, NAME_SIZE);
 			}
 
-			if (it != roomMap.end()) { // null °Ë»ç
+			if (it != roomMap.end()) { // null ê²€ì‚¬
 				InsertSendQueue(SendTo::SEND_ROOM, sendMsg, userMap.find(sock)->second.roomName, 0, ClientStatus::STATUS_CHATTIG);
 			}
 
-			LogVo vo; // DB SQL¹®¿¡ ÇÊ¿äÇÑ Data
+			LogVo vo; // DB SQLë¬¸ì— í•„ìš”í•œ Data
 			vo.setNickName(name.c_str());
 			vo.setRoomName(roomName);
 			vo.setMsg(msg.c_str());
@@ -450,8 +449,8 @@ namespace BusinessService {
 		}
 	}
 
-	// Å¬¶óÀÌ¾ğÆ®¿¡°Ô ¹ŞÀº µ¥ÀÌÅÍ º¹»çÈÄ ±¸Á¶Ã¼ ÇØÁ¦
-	// »ç¿ë ¸Ş¸ğ¸® ÀüºÎ ¹İÈ¯
+	// í´ë¼ì´ì–¸íŠ¸ì—ê²Œ ë°›ì€ ë°ì´í„° ë³µì‚¬í›„ êµ¬ì¡°ì²´ í•´ì œ
+	// ì‚¬ìš© ë©”ëª¨ë¦¬ ì „ë¶€ ë°˜í™˜
 	string BusinessService::DataCopy(LPPER_IO_DATA ioInfo, ClientStatus *status, Direction *direction) {
 
 		copy(((char*)ioInfo->recvBuffer) + 2, ((char*)ioInfo->recvBuffer) + 6,
@@ -460,12 +459,12 @@ namespace BusinessService {
 			(char*)direction);
 
 		CharPool* charPool = CharPool::getInstance();
-		char* msg = charPool->Malloc(); // 512 Byte±îÁö Ä«ÇÇ °¡´É
+		char* msg = charPool->Malloc(); // 512 Byteê¹Œì§€ ì¹´í”¼ ê°€ëŠ¥
 		copy(((char*)ioInfo->recvBuffer) + 10,
 			((char*)ioInfo->recvBuffer) + 10
 			+ min(ioInfo->bodySize, (DWORD)BUF_SIZE), msg);
 
-		// ´Ù º¹»ç ¹Ş¾ÒÀ¸´Ï ÇÒ´ç ÇØÁ¦
+		// ë‹¤ ë³µì‚¬ ë°›ì•˜ìœ¼ë‹ˆ í• ë‹¹ í•´ì œ
 		charPool->Free(ioInfo->recvBuffer);
 		string str = string(msg);
 		charPool->Free(msg);
@@ -473,37 +472,37 @@ namespace BusinessService {
 		return str;
 	}
 
-	// ÆĞÅ¶ µ¥ÀÌÅÍ ÀĞ±â
+	// íŒ¨í‚· ë°ì´í„° ì½ê¸°
 	short BusinessService::PacketReading(LPPER_IO_DATA ioInfo, short bytesTrans) {
-		// IO ¿Ï·áÈÄ µ¿ÀÛ ºÎºĞ
+		// IO ì™„ë£Œí›„ ë™ì‘ ë¶€ë¶„
 
 		if (iocpService->RECV == ioInfo->serverMode) {
 			if (bytesTrans >= 2) {
 				copy(ioInfo->buffer, ioInfo->buffer + 2,
 					(char*)&(ioInfo->bodySize));
 				CharPool* charPool = CharPool::getInstance();
-				ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte±îÁö Ä«ÇÇ °¡´É
-				if (bytesTrans - ioInfo->bodySize > 0) { // ÆĞÅ¶ ¹¶ÃÄÀÖ´Â °æ¿ì
+				ioInfo->recvBuffer = charPool->Malloc(); // 512 Byteê¹Œì§€ ì¹´í”¼ ê°€ëŠ¥
+				if (bytesTrans - ioInfo->bodySize > 0) { // íŒ¨í‚· ë­‰ì³ìˆëŠ” ê²½ìš°
 					copy(ioInfo->buffer, ioInfo->buffer + ioInfo->bodySize,
 						((char*)ioInfo->recvBuffer));
 
-					copy(ioInfo->buffer + ioInfo->bodySize, ioInfo->buffer + bytesTrans, ioInfo->buffer); // ´ÙÀ½¿¡ ¶Ç ¾µ byte¹è¿­ º¹»ç
-					return bytesTrans - ioInfo->bodySize; // ³²Àº ¹ÙÀÌÆ® ¼ö
+					copy(ioInfo->buffer + ioInfo->bodySize, ioInfo->buffer + bytesTrans, ioInfo->buffer); // ë‹¤ìŒì— ë˜ ì“¸ byteë°°ì—´ ë³µì‚¬
+					return bytesTrans - ioInfo->bodySize; // ë‚¨ì€ ë°”ì´íŠ¸ ìˆ˜
 				}
-				else if (bytesTrans - ioInfo->bodySize == 0) { // ¹¶ÃÄÀÖÁö ¾ÊÀ¸¸é remainByte 0
+				else if (bytesTrans - ioInfo->bodySize == 0) { // ë­‰ì³ìˆì§€ ì•Šìœ¼ë©´ remainByte 0
 					copy(ioInfo->buffer, ioInfo->buffer + ioInfo->bodySize,
 						((char*)ioInfo->recvBuffer));
 					return 0;
 				}
-				else { // ¹Ùµğ ³»¿ë ºÎÁ· => RecvMore¿¡¼­ ¹ŞÀ» ºÎºĞ º¹»ç
+				else { // ë°”ë”” ë‚´ìš© ë¶€ì¡± => RecvMoreì—ì„œ ë°›ì„ ë¶€ë¶„ ë³µì‚¬
 					copy(ioInfo->buffer, ioInfo->buffer + bytesTrans, ((char*)ioInfo->recvBuffer));
 					ioInfo->recvByte = bytesTrans;
 					return bytesTrans - ioInfo->bodySize;
 				}
 			}
-			else if (bytesTrans == 1) { // Çì´õ ºÎÁ·
+			else if (bytesTrans == 1) { // í—¤ë” ë¶€ì¡±
 				copy(ioInfo->buffer, ioInfo->buffer + bytesTrans,
-					(char*)&(ioInfo->bodySize)); // °¡Áö°íÀÖ´Â Byte±îÁö Ä«ÇÇ
+					(char*)&(ioInfo->bodySize)); // ê°€ì§€ê³ ìˆëŠ” Byteê¹Œì§€ ì¹´í”¼
 				ioInfo->recvByte = bytesTrans;
 				ioInfo->totByte = 0;
 				return -1;
@@ -512,36 +511,36 @@ namespace BusinessService {
 				return 0;
 			}
 		}
-		else { // ´õ ÀĞ±â (BodySizeÂ©¸°°æ¿ì)
+		else { // ë” ì½ê¸° (BodySizeì§¤ë¦°ê²½ìš°)
 			ioInfo->serverMode = iocpService->RECV;
-			if (ioInfo->recvByte < 2) { // BodyÁ¤º¸ ¾øÀ½
+			if (ioInfo->recvByte < 2) { // Bodyì •ë³´ ì—†ìŒ
 				copy(ioInfo->buffer, ioInfo->buffer + (2 - ioInfo->recvByte),
-					(char*)&(ioInfo->bodySize) + ioInfo->recvByte); // °¡Áö°íÀÖ´Â Byte±îÁö Ä«ÇÇ
+					(char*)&(ioInfo->bodySize) + ioInfo->recvByte); // ê°€ì§€ê³ ìˆëŠ” Byteê¹Œì§€ ì¹´í”¼
 				CharPool* charPool = CharPool::getInstance();
-				ioInfo->recvBuffer = charPool->Malloc(); // 512 Byte±îÁö Ä«ÇÇ °¡´É
+				ioInfo->recvBuffer = charPool->Malloc(); // 512 Byteê¹Œì§€ ì¹´í”¼ ê°€ëŠ¥
 				copy(ioInfo->buffer + (2 - ioInfo->recvByte), ioInfo->buffer + (ioInfo->bodySize + 2 - ioInfo->recvByte),
 					((char*)ioInfo->recvBuffer) + 2);
 
-				if (bytesTrans - ioInfo->bodySize > 0) { // ÆĞÅ¶ ¹¶ÃÄÀÖ´Â °æ¿ì
-					copy(ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte), ioInfo->buffer + bytesTrans, ioInfo->buffer); // ¿©±â¹®Á¦?
-					return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte); // ³²Àº ¹ÙÀÌÆ® ¼ö  ¿©±â¹®Á¦?
+				if (bytesTrans - ioInfo->bodySize > 0) { // íŒ¨í‚· ë­‰ì³ìˆëŠ” ê²½ìš°
+					copy(ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte), ioInfo->buffer + bytesTrans, ioInfo->buffer); // ì—¬ê¸°ë¬¸ì œ?
+					return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte); // ë‚¨ì€ ë°”ì´íŠ¸ ìˆ˜  ì—¬ê¸°ë¬¸ì œ?
 				}
-				else { // ¹¶ÃÄÀÖÁö ¾ÊÀ¸¸é remainByte 0
+				else { // ë­‰ì³ìˆì§€ ì•Šìœ¼ë©´ remainByte 0
 					return 0;
 				}
 			}
-			else { // bodyÁ¤º¸´Â ÀÖÀ½
+			else { // bodyì •ë³´ëŠ” ìˆìŒ
 				copy(ioInfo->buffer, ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte),
 					((char*)ioInfo->recvBuffer) + ioInfo->recvByte);
 
-				if (bytesTrans - ioInfo->bodySize > 0) { // ÆĞÅ¶ ¹¶ÃÄÀÖ´Â °æ¿ì
+				if (bytesTrans - ioInfo->bodySize > 0) { // íŒ¨í‚· ë­‰ì³ìˆëŠ” ê²½ìš°
 					copy(ioInfo->buffer + (ioInfo->bodySize - ioInfo->recvByte), ioInfo->buffer + bytesTrans, ioInfo->buffer);
-					return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte); // ³²Àº ¹ÙÀÌÆ® ¼ö
+					return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte); // ë‚¨ì€ ë°”ì´íŠ¸ ìˆ˜
 				}
-				else if (bytesTrans - ioInfo->bodySize == 0) { // ¹¶ÃÄÀÖÁö ¾ÊÀ¸¸é remainByte 0
+				else if (bytesTrans - ioInfo->bodySize == 0) { // ë­‰ì³ìˆì§€ ì•Šìœ¼ë©´ remainByte 0
 					return 0;
 				}
-				else { // ¹Ùµğ ³»¿ë ºÎÁ· => RecvMore¿¡¼­ ¹ŞÀ» ºÎºĞ º¹»ç
+				else { // ë°”ë”” ë‚´ìš© ë¶€ì¡± => RecvMoreì—ì„œ ë°›ì„ ë¶€ë¶„ ë³µì‚¬
 					copy(ioInfo->buffer + 2, ioInfo->buffer + bytesTrans, ioInfo->buffer);
 					ioInfo->recvByte = bytesTrans;
 					return bytesTrans - (ioInfo->bodySize - ioInfo->recvByte);
@@ -551,10 +550,10 @@ namespace BusinessService {
 		}
 	}
 
-	// Å¬¶óÀÌ¾ğÆ®ÀÇ »óÅÂÁ¤º¸ ¹İÈ¯
+	// í´ë¼ì´ì–¸íŠ¸ì˜ ìƒíƒœì •ë³´ ë°˜í™˜
 	ClientStatus BusinessService::GetStatus(SOCKET sock) {
 		
-		lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
+		lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
 	
 		unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter = userMap.find(sock);
 		if (iter == userMap.end()) {
@@ -566,30 +565,30 @@ namespace BusinessService {
 		}
 	}
 
-	// °èÁ¤¸¸µé±â
+	// ê³„ì •ë§Œë“¤ê¸°
 	void BusinessService::UserMake(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 		
 		string msg = "";
 		char* sArr[3] = { nullptr, };
 		char message2[BUF_SIZE];
 		strncpy(message2, message, BUF_SIZE);
-		char* ptr = strtok(message2, "\\"); // °ø¹é ¹®ÀÚ¿­À» ±âÁØÀ¸·Î ¹®ÀÚ¿­À» ÀÚ¸§
+		char* ptr = strtok(message2, "\\"); // ê³µë°± ë¬¸ìì—´ì„ ê¸°ì¤€ìœ¼ë¡œ ë¬¸ìì—´ì„ ìë¦„
 
 		int i = 0;
-		while (ptr != nullptr)            // ÀÚ¸¥ ¹®ÀÚ¿­ÀÌ ³ª¿ÀÁö ¾ÊÀ» ¶§±îÁö ¹İº¹
+		while (ptr != nullptr)            // ìë¥¸ ë¬¸ìì—´ì´ ë‚˜ì˜¤ì§€ ì•Šì„ ë•Œê¹Œì§€ ë°˜ë³µ
 		{
-			sArr[i] = ptr;           // ¹®ÀÚ¿­À» ÀÚ¸¥ µÚ ¸Ş¸ğ¸® ÁÖ¼Ò¸¦ ¹®ÀÚ¿­ Æ÷ÀÎÅÍ ¹è¿­¿¡ ÀúÀå
-			i++;                       // ÀÎµ¦½º Áõ°¡
-			ptr = strtok(nullptr, "\\");   // ´ÙÀ½ ¹®ÀÚ¿­À» Àß¶ó¼­ Æ÷ÀÎÅÍ¸¦ ¹İÈ¯
+			sArr[i] = ptr;           // ë¬¸ìì—´ì„ ìë¥¸ ë’¤ ë©”ëª¨ë¦¬ ì£¼ì†Œë¥¼ ë¬¸ìì—´ í¬ì¸í„° ë°°ì—´ì— ì €ì¥
+			i++;                       // ì¸ë±ìŠ¤ ì¦ê°€
+			ptr = strtok(nullptr, "\\");   // ë‹¤ìŒ ë¬¸ìì—´ì„ ì˜ë¼ì„œ í¬ì¸í„°ë¥¼ ë°˜í™˜
 		}
-		// À¯È¿¼º °ËÁõ ÇÊ¿ä
+		// ìœ íš¨ì„± ê²€ì¦ í•„ìš”
 		if (sArr[0] != nullptr && sArr[1] != nullptr && sArr[2] != nullptr) {
 
 			UserVo vo;
 			vo.setUserId(sArr[0]);
 			vo = move(Dao::GetInstance()->selectUser(vo));
 
-			if (strcmp(vo.getUserId(), "") == 0) { // ID Áßº¹Ã¼Å© => °èÁ¤ ¾øÀ½
+			if (strcmp(vo.getUserId(), "") == 0) { // ID ì¤‘ë³µì²´í¬ => ê³„ì • ì—†ìŒ
 
 				vo.setUserId(sArr[0]);
 				vo.setPassword(sArr[1]);
@@ -598,15 +597,15 @@ namespace BusinessService {
 				Dao::GetInstance()->InsertUser(vo);
 
 				msg.append(sArr[0]);
-				msg.append("°èÁ¤ »ı¼º ¿Ï·á!\n");
+				msg.append("ê³„ì • ìƒì„± ì™„ë£Œ!\n");
 				msg.append(loginBeforeMessage);
 
 				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
 
 			}
-			else { // IDÁßº¹ÀÖÀ½
+			else { // IDì¤‘ë³µìˆìŒ
 
-				msg.append("Áßº¹µÈ ¾ÆÀÌµğ°¡ ÀÖ½À´Ï´Ù!\n");
+				msg.append("ì¤‘ë³µëœ ì•„ì´ë””ê°€ ìˆìŠµë‹ˆë‹¤!\n");
 				msg.append(loginBeforeMessage);
 
 				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
@@ -614,21 +613,21 @@ namespace BusinessService {
 		}
 	}
 
-	// À¯ÀúÀÔÀå
+	// ìœ ì €ì…ì¥
 	void BusinessService::UserEnter(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 		string msg = "";
 
 		char* sArr[2] = { nullptr, };
 		char message2[BUF_SIZE];
 		strncpy(message2, message, BUF_SIZE);
-		char* ptr = strtok(message2, "\\"); // °ø¹é ¹®ÀÚ¿­À» ±âÁØÀ¸·Î ¹®ÀÚ¿­À» ÀÚ¸§
+		char* ptr = strtok(message2, "\\"); // ê³µë°± ë¬¸ìì—´ì„ ê¸°ì¤€ìœ¼ë¡œ ë¬¸ìì—´ì„ ìë¦„
 
 		int i = 0;
-		while (ptr != nullptr)            // ÀÚ¸¥ ¹®ÀÚ¿­ÀÌ ³ª¿ÀÁö ¾ÊÀ» ¶§±îÁö ¹İº¹
+		while (ptr != nullptr)            // ìë¥¸ ë¬¸ìì—´ì´ ë‚˜ì˜¤ì§€ ì•Šì„ ë•Œê¹Œì§€ ë°˜ë³µ
 		{
-			sArr[i] = ptr;           // ¹®ÀÚ¿­À» ÀÚ¸¥ µÚ ¸Ş¸ğ¸® ÁÖ¼Ò¸¦ ¹®ÀÚ¿­ Æ÷ÀÎÅÍ ¹è¿­¿¡ ÀúÀå
-			i++;                       // ÀÎµ¦½º Áõ°¡
-			ptr = strtok(nullptr, "\\");   // ´ÙÀ½ ¹®ÀÚ¿­À» Àß¶ó¼­ Æ÷ÀÎÅÍ¸¦ ¹İÈ¯
+			sArr[i] = ptr;           // ë¬¸ìì—´ì„ ìë¥¸ ë’¤ ë©”ëª¨ë¦¬ ì£¼ì†Œë¥¼ ë¬¸ìì—´ í¬ì¸í„° ë°°ì—´ì— ì €ì¥
+			i++;                       // ì¸ë±ìŠ¤ ì¦ê°€
+			ptr = strtok(nullptr, "\\");   // ë‹¤ìŒ ë¬¸ìì—´ì„ ì˜ë¼ì„œ í¬ì¸í„°ë¥¼ ë°˜í™˜
 		}
 		if (sArr[0] != nullptr && sArr[1] != nullptr) {
 
@@ -636,36 +635,36 @@ namespace BusinessService {
 			vo.setUserId(sArr[0]);
 			vo = move(Dao::GetInstance()->selectUser(vo));
 
-			if (strcmp(vo.getUserId(), "") == 0) { // °èÁ¤ ¾øÀ½
+			if (strcmp(vo.getUserId(), "") == 0) { // ê³„ì • ì—†ìŒ
 
-				msg.append("¾ø´Â °èÁ¤ÀÔ´Ï´Ù ¾ÆÀÌµğ¸¦ È®ÀÎÇÏ¼¼¿ä!\n");
+				msg.append("ì—†ëŠ” ê³„ì •ì…ë‹ˆë‹¤ ì•„ì´ë””ë¥¼ í™•ì¸í•˜ì„¸ìš”!\n");
 				msg.append(loginBeforeMessage);
 
-				// SendQueue¿¡ Insert
+				// SendQueueì— Insert
 				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
 
 			}
-			else if (strcmp(vo.getPassword(), sArr[1]) == 0) { // ºñ¹Ğ¹øÈ£ ÀÏÄ¡
+			else if (strcmp(vo.getPassword(), sArr[1]) == 0) { // ë¹„ë°€ë²ˆí˜¸ ì¼ì¹˜
 				EnterCriticalSection(&idCs);
 				unordered_set<string>::const_iterator it = idSet.find(sArr[0]);
-				if (it != idSet.end()) { // Áßº¹·Î±×ÀÎ À¯È¿¼º °Ë»ç
-					LeaveCriticalSection(&idCs); // Case Lock ÇØÁ¦
-					msg.append("Áßº¹ ·Î±×ÀÎÀº ¾ÈµË´Ï´Ù!\n");
+				if (it != idSet.end()) { // ì¤‘ë³µë¡œê·¸ì¸ ìœ íš¨ì„± ê²€ì‚¬
+					LeaveCriticalSection(&idCs); // Case Lock í•´ì œ
+					msg.append("ì¤‘ë³µ ë¡œê·¸ì¸ì€ ì•ˆë©ë‹ˆë‹¤!\n");
 					msg.append(loginBeforeMessage);
 
-					// SendQueue¿¡ Insert
+					// SendQueueì— Insert
 					InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
 
 				}
-				else { // Áßº¹·Î±×ÀÎ X
+				else { // ì¤‘ë³µë¡œê·¸ì¸ X
 					idSet.insert(sArr[0]);
-					LeaveCriticalSection(&idCs); //InitºÎºĞ µÎ¹øµ¿ÀÛ ¹æÁö
-					InitUser(sArr[0], sock, vo.getNickName()); // ¼¼¼ÇÁ¤º¸ ÀúÀå
+					LeaveCriticalSection(&idCs); //Initë¶€ë¶„ ë‘ë²ˆë™ì‘ ë°©ì§€
+					InitUser(sArr[0], sock, vo.getNickName()); // ì„¸ì…˜ì •ë³´ ì €ì¥
 				}
 
 			}
-			else { // ºñ¹Ğ¹øÈ£ Æ²¸²
-				msg.append("ºñ¹Ğ¹øÈ£ Æ²¸²!\n");
+			else { // ë¹„ë°€ë²ˆí˜¸ í‹€ë¦¼
+				msg.append("ë¹„ë°€ë²ˆí˜¸ í‹€ë¦¼!\n");
 				msg.append(loginBeforeMessage);
 
 				InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_LOGOUT);
@@ -673,45 +672,45 @@ namespace BusinessService {
 		}
 	}
 	
-	// ¹æ ¸¸µé±â ±â´É
+	// ë°© ë§Œë“¤ê¸° ê¸°ëŠ¥
 	void BusinessService::RoomMake(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 
 		string name = userMap.find(sock)->second.userName;
 		string id = userMap.find(sock)->second.userId;
 		string msg = string(message);
 
-		// À¯È¿¼º °ËÁõ ¸ÕÀú
+		// ìœ íš¨ì„± ê²€ì¦ ë¨¼ì €
 		EnterCriticalSection(&roomCs);
 		size_t cnt = roomMap.count(msg);
 
-		if (cnt != 0) { // ¹æÀÌ¸§ Áßº¹
+		if (cnt != 0) { // ë°©ì´ë¦„ ì¤‘ë³µ
 			LeaveCriticalSection(&roomCs);
-			msg.append("ÀÌ¹Ì ÀÖ´Â ¹æ ÀÌ¸§ÀÔ´Ï´Ù!\n");
+			msg.append("ì´ë¯¸ ìˆëŠ” ë°© ì´ë¦„ì…ë‹ˆë‹¤!\n");
 			msg.append(waitRoomMessage);
 			InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
-			// Áßº¹ ÄÉÀÌ½º´Â ¹æ ¸¸µé ¼ö ¾øÀ½
+			// ì¤‘ë³µ ì¼€ì´ìŠ¤ëŠ” ë°© ë§Œë“¤ ìˆ˜ ì—†ìŒ
 		}
-		else { // ¹æÀÌ¸§ Áßº¹ ¾Æ´Ò ¶§¸¸ °³¼³
-			// »õ·Î¿î ¹æ Á¤º¸ ÀúÀå
+		else { // ë°©ì´ë¦„ ì¤‘ë³µ ì•„ë‹ ë•Œë§Œ ê°œì„¤
+			// ìƒˆë¡œìš´ ë°© ì •ë³´ ì €ì¥
 			shared_ptr<ROOM_DATA> roomData = make_shared<ROOM_DATA>();
 			list<SOCKET> chatList;
 			chatList.push_back(sock);
-			// ¹æ ¸®½ºÆ®º° CS°´Ã¼ Init
+			// ë°© ë¦¬ìŠ¤íŠ¸ë³„ CSê°ì²´ Init
 			roomData->userList = chatList;
 			roomMap[msg] = roomData;
 
 			LeaveCriticalSection(&roomCs);
 
-			// UserÀÇ »óÅÂ Á¤º¸ ¹Ù²Û´Ù
+			// Userì˜ ìƒíƒœ ì •ë³´ ë°”ê¾¼ë‹¤
 			{
-				lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
+				lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
 				strncpy((userMap.find(sock))->second.roomName, msg.c_str(),
 					NAME_SIZE);
 				(userMap.find(sock))->second.status =
 					ClientStatus::STATUS_CHATTIG;
 			}
 
-			msg += " ¹æÀÌ °³¼³µÇ¾ú½À´Ï´Ù.";
+			msg += " ë°©ì´ ê°œì„¤ë˜ì—ˆìŠµë‹ˆë‹¤.";
 			msg += chatRoomMessage;
 			cout << "Now server room count : " << roomMap.size() << endl;
 			InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_CHATTIG);
@@ -719,19 +718,19 @@ namespace BusinessService {
 		}
 	}
 
-	// ¹æ µé¾î°¡±â
+	// ë°© ë“¤ì–´ê°€ê¸°
 	void BusinessService::RoomEnter(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 
 		string name = userMap.find(sock)->second.userName;
 		string id = userMap.find(sock)->second.userId;
 		string msg = string(message);
 
-		// À¯È¿¼º °ËÁõ ¸ÕÀú
+		// ìœ íš¨ì„± ê²€ì¦ ë¨¼ì €
 		EnterCriticalSection(&roomCs);
 
-		if (roomMap.find(msg) == roomMap.end()) { // ¹æ ¸øÃ£À½
+		if (roomMap.find(msg) == roomMap.end()) { // ë°© ëª»ì°¾ìŒ
 			LeaveCriticalSection(&roomCs);
-			msg.append("¾ø´Â ¹æ ÀÔ´Ï´Ù!\n");
+			msg.append("ì—†ëŠ” ë°© ì…ë‹ˆë‹¤!\n");
 			msg.append(waitRoomMessage);
 
 			InsertSendQueue(SendTo::SEND_ME, msg, "", sock, ClientStatus::STATUS_WAITING);
@@ -744,25 +743,25 @@ namespace BusinessService {
 			if (iter != roomMap.end()) {
 				second = iter->second;
 			}
-			LeaveCriticalSection(&roomCs); // °³º°¹æ ÀÔÀå°ú ÀüÃ¼ ¹æ Lock µû·Î
+			LeaveCriticalSection(&roomCs); // ê°œë³„ë°© ì…ì¥ê³¼ ì „ì²´ ë°© Lock ë”°ë¡œ
 
-			if (second != nullptr) { // ¹æÀÌ »ì¾ÆÀÖÀ» ¶§ »óÅÂ ¾÷µ¥ÀÌÆ® + list insert
+			if (second != nullptr) { // ë°©ì´ ì‚´ì•„ìˆì„ ë•Œ ìƒíƒœ ì—…ë°ì´íŠ¸ + list insert
 
 				{
-					lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
+					lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
 					strncpy(userMap.find(sock)->second.roomName, msg.c_str(),
-						NAME_SIZE); // ·Î±×ÀÎ À¯Àú Á¤º¸ º¯°æ
+						NAME_SIZE); // ë¡œê·¸ì¸ ìœ ì € ì •ë³´ ë³€ê²½
 					userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
 				}
 				{
 					lock_guard<recursive_mutex> guard(roomMap.find(msg)->second->listCs);
-					//¹æÀÌ ÀÖÀ¸´Ï±î À¯Àú¸¦ insert
+					//ë°©ì´ ìˆìœ¼ë‹ˆê¹Œ ìœ ì €ë¥¼ insert
 					roomMap.find(msg)->second->userList.push_back(sock);
 				}
-				// ¹æÀÇ Lock
+				// ë°©ì˜ Lock
 
 				string sendMsg = name;
-				sendMsg.append(" ´ÔÀÌ ÀÔÀåÇÏ¼Ì½À´Ï´Ù. ");
+				sendMsg.append(" ë‹˜ì´ ì…ì¥í•˜ì…¨ìŠµë‹ˆë‹¤. ");
 				sendMsg.append(chatRoomMessage);
 
 				InsertSendQueue(SendTo::SEND_ROOM, sendMsg, msg, 0, ClientStatus::STATUS_CHATTIG);
@@ -770,7 +769,7 @@ namespace BusinessService {
 		}
 	}
 
-	// ±Ó¼Ó¸»
+	// ê·“ì†ë§
 	void BusinessService::Whisper(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 
 		string name = userMap.find(sock)->second.userName;
@@ -780,13 +779,13 @@ namespace BusinessService {
 		char* sArr[2] = { nullptr, };
 		char message2[BUF_SIZE];
 		strncpy(message2, message, BUF_SIZE);
-		char* ptr = strtok(message2, "\\"); // °ø¹é ¹®ÀÚ¿­À» ±âÁØÀ¸·Î ¹®ÀÚ¿­À» ÀÚ¸§
+		char* ptr = strtok(message2, "\\"); // ê³µë°± ë¬¸ìì—´ì„ ê¸°ì¤€ìœ¼ë¡œ ë¬¸ìì—´ì„ ìë¦„
 		int i = 0;
-		while (ptr != nullptr)            // ÀÚ¸¥ ¹®ÀÚ¿­ÀÌ ³ª¿ÀÁö ¾ÊÀ» ¶§±îÁö ¹İº¹
+		while (ptr != nullptr)            // ìë¥¸ ë¬¸ìì—´ì´ ë‚˜ì˜¤ì§€ ì•Šì„ ë•Œê¹Œì§€ ë°˜ë³µ
 		{
-			sArr[i] = ptr;           // ¹®ÀÚ¿­À» ÀÚ¸¥ µÚ ¸Ş¸ğ¸® ÁÖ¼Ò¸¦ ¹®ÀÚ¿­ Æ÷ÀÎÅÍ ¹è¿­¿¡ ÀúÀå
-			i++;                       // ÀÎµ¦½º Áõ°¡
-			ptr = strtok(nullptr, "\\");   // ´ÙÀ½ ¹®ÀÚ¿­À» Àß¶ó¼­ Æ÷ÀÎÅÍ¸¦ ¹İÈ¯
+			sArr[i] = ptr;           // ë¬¸ìì—´ì„ ìë¥¸ ë’¤ ë©”ëª¨ë¦¬ ì£¼ì†Œë¥¼ ë¬¸ìì—´ í¬ì¸í„° ë°°ì—´ì— ì €ì¥
+			i++;                       // ì¸ë±ìŠ¤ ì¦ê°€
+			ptr = strtok(nullptr, "\\");   // ë‹¤ìŒ ë¬¸ìì—´ì„ ì˜ë¼ì„œ í¬ì¸í„°ë¥¼ ë°˜í™˜
 		}
 		if (sArr[0] != nullptr && sArr[1] != nullptr) {
 			name = string(sArr[0]);
@@ -794,8 +793,8 @@ namespace BusinessService {
 
 			string sendMsg;
 
-			if (name.compare(userMap.find(sock)->second.userName) == 0) { // º»ÀÎ¿¡°Ô ÂÊÁö
-				sendMsg = "ÀÚ½Å¿¡°Ô ÂÊÁö¸¦ º¸³¾¼ö ¾ø½À´Ï´Ù\n";
+			if (name.compare(userMap.find(sock)->second.userName) == 0) { // ë³¸ì¸ì—ê²Œ ìª½ì§€
+				sendMsg = "ìì‹ ì—ê²Œ ìª½ì§€ë¥¼ ë³´ë‚¼ìˆ˜ ì—†ìŠµë‹ˆë‹¤\n";
 				sendMsg += waitRoomMessage;
 
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
@@ -805,8 +804,8 @@ namespace BusinessService {
 				bool find = false;
 				unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
 				{
-					lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
-					userCopyMap = userMap; // ·Î±×ÀÎµÈ Ä£±¸Á¤º¸ È®ÀÎÀ§ÇØ º¹»ç
+					lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
+					userCopyMap = userMap; // ë¡œê·¸ì¸ëœ ì¹œêµ¬ì •ë³´ í™•ì¸ìœ„í•´ ë³µì‚¬
 				}
 
 				unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
@@ -815,7 +814,7 @@ namespace BusinessService {
 					if (name.compare(iter->second.userName) == 0) {
 						find = true;
 						sendMsg = userCopyMap.find(sock)->second.userName;
-						sendMsg += " ´Ô¿¡°Ô ¿Â ±Ó¼Ó¸» : ";
+						sendMsg += " ë‹˜ì—ê²Œ ì˜¨ ê·“ì†ë§ : ";
 						sendMsg += msg;
 
 						InsertSendQueue(SendTo::SEND_ME, sendMsg, "", iter->first, ClientStatus::STATUS_WHISPER);
@@ -824,10 +823,10 @@ namespace BusinessService {
 					}
 				}
 
-				// ±Ó¼Ó¸» ´ë»óÀÚ ¸øÃ£À½
+				// ê·“ì†ë§ ëŒ€ìƒì ëª»ì°¾ìŒ
 				if (!find) {
 					sendMsg = name;
-					sendMsg += " ´ÔÀ» Ã£À» ¼ö ¾ø½À´Ï´Ù";
+					sendMsg += " ë‹˜ì„ ì°¾ì„ ìˆ˜ ì—†ìŠµë‹ˆë‹¤";
 
 					InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 				}
@@ -836,7 +835,7 @@ namespace BusinessService {
 
 	}
 
-	// ¹æ Á¤º¸
+	// ë°© ì •ë³´
 	void BusinessService::RoomInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 
 		string name = userMap.find(sock)->second.userName;
@@ -845,24 +844,24 @@ namespace BusinessService {
 
 		string str;
 		if (roomMap.size() == 0) {
-			str = "¸¸µé¾îÁø ¹æÀÌ ¾ø½À´Ï´Ù";
+			str = "ë§Œë“¤ì–´ì§„ ë°©ì´ ì—†ìŠµë‹ˆë‹¤";
 		}
 		else {
-			str += "¹æ Á¤º¸ ¸®½ºÆ®";
+			str += "ë°© ì •ë³´ ë¦¬ìŠ¤íŠ¸";
 			EnterCriticalSection(&roomCs);
 			map<string, shared_ptr<ROOM_DATA>> roomCopyMap = roomMap;
 			LeaveCriticalSection(&roomCs);
-			// roomMap °è¼Ó Àâ°í ÀÖÁö ¾Êµµ·Ï ±íÀºº¹»ç
+			// roomMap ê³„ì† ì¡ê³  ìˆì§€ ì•Šë„ë¡ ê¹Šì€ë³µì‚¬
 			map<string, shared_ptr<ROOM_DATA>>::const_iterator iter;
 
-			// ¹æÁ¤º¸¸¦ ¹®ÀÚ¿­·Î ¸¸µç´Ù
+			// ë°©ì •ë³´ë¥¼ ë¬¸ìì—´ë¡œ ë§Œë“ ë‹¤
 			for (iter = roomCopyMap.begin(); iter != roomCopyMap.end();
 				iter++) {
 				str += "\n";
 				str += iter->first.c_str();
 				str += ":";
 				str += to_string((iter->second)->userList.size());
-				str += "¸í";
+				str += "ëª…";
 			}
 
 		}
@@ -870,19 +869,19 @@ namespace BusinessService {
 		InsertSendQueue(SendTo::SEND_ME, str, "", sock, ClientStatus::STATUS_WAITING);
 	}
 
-	// À¯Àú ¹æ Á¤º¸
+	// ìœ ì € ë°© ì •ë³´
 	void BusinessService::RoomUserInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 		string name = userMap.find(sock)->second.userName;
 		string id = userMap.find(sock)->second.userId;
 		string msg = string(message);
 
-		string str = "À¯Àú Á¤º¸ ¸®½ºÆ®";
+		string str = "ìœ ì € ì •ë³´ ë¦¬ìŠ¤íŠ¸";
 		unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
 		{
-			lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
+			lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
 			userCopyMap = userMap;
 		}
-		// userMap °è¼Ó Àâ°í ÀÖÁö ¾Êµµ·Ï ±íÀºº¹»ç
+		// userMap ê³„ì† ì¡ê³  ìˆì§€ ì•Šë„ë¡ ê¹Šì€ë³µì‚¬
 		unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
 		for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
 			if (str.length() >= 4000) {
@@ -892,7 +891,7 @@ namespace BusinessService {
 			str += (iter->second).userName;
 			str += ":";
 			if ((iter->second).status == ClientStatus::STATUS_WAITING) {
-				str += "´ë±â½Ç";
+				str += "ëŒ€ê¸°ì‹¤";
 			}
 			else {
 				str += (iter->second).roomName;
@@ -902,7 +901,7 @@ namespace BusinessService {
 		InsertSendQueue(SendTo::SEND_ME, str, "", sock, ClientStatus::STATUS_WAITING);
 	}
 
-	// Ä£±¸Á¤º¸ ¿äÃ»
+	// ì¹œêµ¬ì •ë³´ ìš”ì²­
 	void BusinessService::FriendInfo(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 		string name = userMap.find(sock)->second.userName;
 		string id = userMap.find(sock)->second.userId;
@@ -912,31 +911,31 @@ namespace BusinessService {
 		vo.setUserId(id.c_str());
 		vector<RelationVo> vec = move(Dao::GetInstance()->selectFriends(vo));
 
-		string sendMsg = "Ä£±¸ Á¤º¸ ¸®½ºÆ®";
+		string sendMsg = "ì¹œêµ¬ ì •ë³´ ë¦¬ìŠ¤íŠ¸";
 		if (vec.size() == 0) {
-			sendMsg.append("\nµî·ÏµÈ Ä£±¸°¡ ¾ø½À´Ï´Ù");
+			sendMsg.append("\në“±ë¡ëœ ì¹œêµ¬ê°€ ì—†ìŠµë‹ˆë‹¤");
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 		}
 		else {
 			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
 			{
-				lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
-				userCopyMap = userMap; // ·Î±×ÀÎµÈ Ä£±¸Á¤º¸ È®ÀÎÀ§ÇØ º¹»ç
+				lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
+				userCopyMap = userMap; // ë¡œê·¸ì¸ëœ ì¹œêµ¬ì •ë³´ í™•ì¸ìœ„í•´ ë³µì‚¬
 			}
 
-			// SelectÇØ¼­ °¡Á®¿Â À¯ÀúÀÇ Ä£±¸Á¤º¸
+			// Selectí•´ì„œ ê°€ì ¸ì˜¨ ìœ ì €ì˜ ì¹œêµ¬ì •ë³´
 			for (int i = 0; i < vec.size(); i++) {
 
 				unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
 				bool exist = false;
-				// userMapÀ» Å½»öÇÏ¿© Ä£±¸ À§Ä¡ °¡°ø
+				// userMapì„ íƒìƒ‰í•˜ì—¬ ì¹œêµ¬ ìœ„ì¹˜ ê°€ê³µ
 				for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
 					if (strcmp(vec[i].getNickName(), iter->second.userName) == 0) {
 						sendMsg += "\n";
 						sendMsg += vec[i].getNickName();
 						sendMsg += ":";
 						if (strcmp(iter->second.roomName, "") == 0) {
-							sendMsg += "´ë±â½Ç";
+							sendMsg += "ëŒ€ê¸°ì‹¤";
 						}
 						else {
 							sendMsg += iter->second.roomName;
@@ -945,12 +944,12 @@ namespace BusinessService {
 						break;
 					}
 				}
-				// userMap¿¡ ¾øÀ¸¸é Á¢¼Ó ¾ÈÇÑ »óÅÂ
+				// userMapì— ì—†ìœ¼ë©´ ì ‘ì† ì•ˆí•œ ìƒíƒœ
 				if (!exist) {
 					sendMsg += "\n";
 					sendMsg += vec[i].getNickName();
 					sendMsg += ":";
-					sendMsg += "Á¢¼Ó¾ÈÇÔ";
+					sendMsg += "ì ‘ì†ì•ˆí•¨";
 				}
 
 			}
@@ -958,7 +957,7 @@ namespace BusinessService {
 		}
 	}
 
-	// Ä£±¸Ãß°¡ ±â´É
+	// ì¹œêµ¬ì¶”ê°€ ê¸°ëŠ¥
 	void BusinessService::FriendAdd(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 
 		string name = userMap.find(sock)->second.userName;
@@ -968,12 +967,12 @@ namespace BusinessService {
 
 		RelationVo vo;
 		vo.setNickName(msg.c_str());
-		RelationVo vo2 = move(Dao::GetInstance()->findUserId(vo)); // ¾ÆÀÌµğ Á¸Àç ¿©ºÎ °Ë»ö
+		RelationVo vo2 = move(Dao::GetInstance()->findUserId(vo)); // ì•„ì´ë”” ì¡´ì¬ ì—¬ë¶€ ê²€ìƒ‰
 
 		string sendMsg;
 
 		if (strcmp(vo2.getRelationto(), "") == 0) {
-			sendMsg = "¾ÆÀÌµğ ¾øÀ½ Ä£Ãß ºÒ°¡´É";
+			sendMsg = "ì•„ì´ë”” ì—†ìŒ ì¹œì¶” ë¶ˆê°€ëŠ¥";
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, status);
 		}
 		else {
@@ -981,21 +980,21 @@ namespace BusinessService {
 			vo2.setUserId(id.c_str());
 			vo2.setRelationcode(1);
 			int res = Dao::GetInstance()->InsertRelation(vo2);
-			if (res != -1) { // Ä£Ãß ¼º°ø
+			if (res != -1) { // ì¹œì¶” ì„±ê³µ
 				sendMsg = msg;
-				sendMsg.append("´ÔÀÌ Ä£±¸Ãß°¡ µÇ¾ú½À´Ï´Ù");
+				sendMsg.append("ë‹˜ì´ ì¹œêµ¬ì¶”ê°€ ë˜ì—ˆìŠµë‹ˆë‹¤");
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, status);
 			}
 			else {
 				sendMsg = msg;
-				sendMsg.append("´ÔÀÌ Ä£±¸Ãß°¡ ½ÇÆĞ");
+				sendMsg.append("ë‹˜ì´ ì¹œêµ¬ì¶”ê°€ ì‹¤íŒ¨");
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, status);
 			}
 		}
 	}
 
 
-	// Ä£±¸¿¡°Ô °¡±â
+	// ì¹œêµ¬ì—ê²Œ ê°€ê¸°
 	void BusinessService::FriendGo(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 		string name = userMap.find(sock)->second.userName;
 		string id = userMap.find(sock)->second.userId;
@@ -1004,19 +1003,19 @@ namespace BusinessService {
 		RelationVo vo;
 		vo.setUserId(id.c_str());
 		vo.setRelationto(msg.c_str());
-		// ¿äÃ» Ä£±¸ Á¤º¸ select
+		// ìš”ì²­ ì¹œêµ¬ ì •ë³´ select
 		RelationVo vo2 = move(Dao::GetInstance()->selectOneFriend(vo));
 
-		if (strcmp(vo2.getNickName(), "") == 0) { // Ä£±¸Á¤º¸ ¸øÃ£À½
-			string sendMsg = "Ä£±¸Á¤º¸¸¦ Ã£À» ¼ö ¾ø½À´Ï´Ù\n";
+		if (strcmp(vo2.getNickName(), "") == 0) { // ì¹œêµ¬ì •ë³´ ëª»ì°¾ìŒ
+			string sendMsg = "ì¹œêµ¬ì •ë³´ë¥¼ ì°¾ì„ ìˆ˜ ì—†ìŠµë‹ˆë‹¤\n";
 			sendMsg += waitRoomMessage;
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 		}
 		else {
 			unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
 			{
-				lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
-				userCopyMap = userMap; // ·Î±×ÀÎµÈ Ä£±¸Á¤º¸ È®ÀÎÀ§ÇØ º¹»ç
+				lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
+				userCopyMap = userMap; // ë¡œê·¸ì¸ëœ ì¹œêµ¬ì •ë³´ í™•ì¸ìœ„í•´ ë³µì‚¬
 			}
 
 			unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
@@ -1024,16 +1023,16 @@ namespace BusinessService {
 			bool exist = false;
 
 			for (iter = userCopyMap.begin(); iter != userCopyMap.end(); iter++) {
-				if (strcmp(vo2.getNickName(), iter->second.userName) == 0) { // ÀÏÄ¡ ´Ğ³×ÀÓ Ã£À½
-					if (strcmp(iter->second.roomName, "") == 0) { // ´ë±â½Ç¿¡ ÀÖÀ½
+				if (strcmp(vo2.getNickName(), iter->second.userName) == 0) { // ì¼ì¹˜ ë‹‰ë„¤ì„ ì°¾ìŒ
+					if (strcmp(iter->second.roomName, "") == 0) { // ëŒ€ê¸°ì‹¤ì— ìˆìŒ
 						string sendMsg = string(message);
-						sendMsg += " ´ÔÀº ´ë±â½Ç¿¡ ÀÖ½À´Ï´Ù";
+						sendMsg += " ë‹˜ì€ ëŒ€ê¸°ì‹¤ì— ìˆìŠµë‹ˆë‹¤";
 
 						InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 						exist = true;
 						break;
 					}
-					else { // ¹æ ÀÔÀå ÇÁ·Î¼¼½º
+					else { // ë°© ì…ì¥ í”„ë¡œì„¸ìŠ¤
 						EnterCriticalSection(&roomCs);
 						string roomName = iter->second.roomName;
 						auto iter = roomMap.find(roomName);
@@ -1041,25 +1040,25 @@ namespace BusinessService {
 						if (iter != roomMap.end()) {
 							second = iter->second;
 						}
-						LeaveCriticalSection(&roomCs); // °³º°¹æ ÀÔÀå°ú ÀüÃ¼ ¹æ Lock µû·Î
+						LeaveCriticalSection(&roomCs); // ê°œë³„ë°© ì…ì¥ê³¼ ì „ì²´ ë°© Lock ë”°ë¡œ
 
-						if (second != nullptr) { // ¹æÀÌ »ì¾ÆÀÖÀ» ¶§ »óÅÂ ¾÷µ¥ÀÌÆ® + list insert
+						if (second != nullptr) { // ë°©ì´ ì‚´ì•„ìˆì„ ë•Œ ìƒíƒœ ì—…ë°ì´íŠ¸ + list insert
 							string nick;
 							{
-								lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
+								lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
 								strncpy(userMap.find(sock)->second.roomName, roomName.c_str(),
-									NAME_SIZE); // ·Î±×ÀÎ À¯Àú Á¤º¸ º¯°æ
+									NAME_SIZE); // ë¡œê·¸ì¸ ìœ ì € ì •ë³´ ë³€ê²½
 								userMap.find(sock)->second.status = ClientStatus::STATUS_CHATTIG;
 								nick = userMap.find(sock)->second.userName;
 							}
 							{
 								lock_guard<recursive_mutex> guard(roomMap.find(msg)->second->listCs);
 								roomMap.find(roomName)->second->userList.push_back(sock);
-							}// ¹æÀÇ Lock
+							}// ë°©ì˜ Lock
 
 							string sendMsg = "";
 							sendMsg.append(nick);
-							sendMsg += " ´ÔÀÌ ÀÔÀåÇÏ¼Ì½À´Ï´Ù. ";
+							sendMsg += " ë‹˜ì´ ì…ì¥í•˜ì…¨ìŠµë‹ˆë‹¤. ";
 							sendMsg += chatRoomMessage;
 
 							InsertSendQueue(SendTo::SEND_ROOM, sendMsg, roomName, 0, ClientStatus::STATUS_CHATTIG);
@@ -1073,14 +1072,14 @@ namespace BusinessService {
 
 			if (!exist) {
 				string sendMsg = string(message);
-				sendMsg += " ´ÔÀº Á¢¼ÓÁßÀÌ ¾Æ´Õ´Ï´Ù";
+				sendMsg += " ë‹˜ì€ ì ‘ì†ì¤‘ì´ ì•„ë‹™ë‹ˆë‹¤";
 
 				InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 			}
 		}
 	}
 
-	// Ä£±¸»èÁ¦
+	// ì¹œêµ¬ì‚­ì œ
 	void BusinessService::FriendDelete(SOCKET sock, ClientStatus status, Direction direction, const char* message) {
 		string name = userMap.find(sock)->second.userName;
 		string id = userMap.find(sock)->second.userId;
@@ -1092,14 +1091,14 @@ namespace BusinessService {
 		vo.setNickName(msg.c_str());
 
 		int res = Dao::GetInstance()->DeleteRelation(vo);
-		if (res != -1) { // »èÁ¦ ¼º°ø
+		if (res != -1) { // ì‚­ì œ ì„±ê³µ
 			string sendMsg = msg;
-			sendMsg += " ´ÔÀ» Ä£±¸ »èÁ¦Çß½À´Ï´Ù";
+			sendMsg += " ë‹˜ì„ ì¹œêµ¬ ì‚­ì œí–ˆìŠµë‹ˆë‹¤";
 
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
 		}
-		else { // »èÁ¦½ÇÆĞ
-			string sendMsg = "Ä£±¸ »èÁ¦½ÇÆĞ\n";
+		else { // ì‚­ì œì‹¤íŒ¨
+			string sendMsg = "ì¹œêµ¬ ì‚­ì œì‹¤íŒ¨\n";
 			sendMsg.append(waitRoomMessage);
 
 			InsertSendQueue(SendTo::SEND_ME, sendMsg, "", sock, ClientStatus::STATUS_WAITING);
@@ -1113,7 +1112,8 @@ namespace BusinessService {
 		}
 	}
 
-	bool BusinessService::IsSocketDead(SOCKET socket){
+	bool BusinessService::IsSocketDead(SOCKET socket) {
+		std::lock_guard<std::mutex> guard(liveSocketCs);
 		return liveSocket.find(socket) == liveSocket.end();
 	}
 
@@ -1121,8 +1121,8 @@ namespace BusinessService {
 
 		unordered_map<SOCKET, PER_HANDLE_DATA> userCopyMap;
 		{
-			lock_guard<mutex> guard(userCs);  // LockÃÖ¼ÒÈ­
-			userCopyMap = userMap; // ·Î±×ÀÎµÈ Ä£±¸Á¤º¸ È®ÀÎÀ§ÇØ º¹»ç
+			lock_guard<mutex> guard(userCs);  // Lockìµœì†Œí™”
+			userCopyMap = userMap; // ë¡œê·¸ì¸ëœ ì¹œêµ¬ì •ë³´ í™•ì¸ìœ„í•´ ë³µì‚¬
 		}
 
 		unordered_map<SOCKET, PER_HANDLE_DATA>::const_iterator iter;
@@ -1131,7 +1131,7 @@ namespace BusinessService {
 			if (strcmp(nickName, iter->second.userName) == 0) {
 				SOCKET sock = iter->first;
 
-				// ¼¼¼ÇÁ¤º¸ ÀÖÀ»¶§´Â => ¼¼¼ÇÁ¤º¸ ¹æ Á¤º¸ Á¦°Å ÇÊ¿ä
+				// ì„¸ì…˜ì •ë³´ ìˆì„ë•ŒëŠ” => ì„¸ì…˜ì •ë³´ ë°© ì •ë³´ ì œê±° í•„ìš”
 				char roomName[NAME_SIZE];
 				char name[NAME_SIZE];
 				char id[NAME_SIZE];
@@ -1141,54 +1141,54 @@ namespace BusinessService {
 				strncpy(name, userMap.find(sock)->second.userName, NAME_SIZE);
 				strncpy(id, userMap.find(sock)->second.userId, NAME_SIZE);
 
-				// ·Î±×ÀÎ Set¿¡¼­ out
+				// ë¡œê·¸ì¸ Setì—ì„œ out
 				EnterCriticalSection(&idCs);
 				idSet.erase(id);
 				LeaveCriticalSection(&idCs);
 
-				// ¹æÀÌ¸§ ÀÓ½Ã ÀúÀå
-				if (userMap.find(sock)->second.status == ClientStatus::STATUS_CHATTIG) { // ¹æ¿¡ Á¢¼ÓÁßÀÎ °æ¿ì
+				// ë°©ì´ë¦„ ì„ì‹œ ì €ì¥
+				if (userMap.find(sock)->second.status == ClientStatus::STATUS_CHATTIG) { // ë°©ì— ì ‘ì†ì¤‘ì¸ ê²½ìš°
 					string sendMsg;
 					string roomName;
 					sendMsg = name;
-					sendMsg += " ´ÔÀÌ ³ª°¬½À´Ï´Ù!";
+					sendMsg += " ë‹˜ì´ ë‚˜ê°”ìŠµë‹ˆë‹¤!";
 
-					// ¹æÀÌ¸§ ÀÓ½Ã ÀúÀå
+					// ë°©ì´ë¦„ ì„ì‹œ ì €ì¥
 					roomName = string(userMap.find(sock)->second.roomName);
 
-					// °³º° ÅğÀå½Ã¿¡´Â Room List °³º° Lock¸¸
+					// ê°œë³„ í‡´ì¥ì‹œì—ëŠ” Room List ê°œë³„ Lockë§Œ
 					{
 						lock_guard<recursive_mutex> guard(roomMap.find(roomName)->second->listCs);
-						// ³ª°¥¶§´Â Áï½Ã BoardCast
+						// ë‚˜ê°ˆë•ŒëŠ” ì¦‰ì‹œ BoardCast
 						iocpService->SendToRoomMsg(sendMsg.c_str(), roomMap.find(roomName)->second->userList, ClientStatus::STATUS_CHATTIG);
 
-						roomMap.find(roomName)->second->userList.remove(sock); // ³ª°¡´Â »ç¶÷ Á¤º¸ out
+						roomMap.find(roomName)->second->userList.remove(sock); // ë‚˜ê°€ëŠ” ì‚¬ëŒ ì •ë³´ out
 
 					}				
-					// Room List °³º° Lock¸¸
+					// Room List ê°œë³„ Lockë§Œ
 
 
 					{
-						lock_guard<mutex> guard(userCs);  // ·Î±×ÀÎµÈ »ç¿ëÀÚÁ¤º¸ º¯°æ Lock
-						strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // ¹æÀÌ¸§ ÃÊ±âÈ­
-						userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // »óÅÂ º¯°æ
+						lock_guard<mutex> guard(userCs);  // ë¡œê·¸ì¸ëœ ì‚¬ìš©ìì •ë³´ ë³€ê²½ Lock
+						strncpy(userMap.find(sock)->second.roomName, "", NAME_SIZE); // ë°©ì´ë¦„ ì´ˆê¸°í™”
+						userMap.find(sock)->second.status = ClientStatus::STATUS_WAITING; // ìƒíƒœ ë³€ê²½
 					}
 
-					// room LockÀº ¹æ ¿ÏÀü »èÁ¦½Ã ¿¡¸¸
+					// room Lockì€ ë°© ì™„ì „ ì‚­ì œì‹œ ì—ë§Œ
 					EnterCriticalSection(&roomCs);
 					if (roomMap.find(roomName) != roomMap.end()) {
-						if ((roomMap.find(roomName)->second)->userList.size() == 0) { // ¹æÀÎ¿ø 0¸íÀÌ¸é ¹æ »èÁ¦
+						if ((roomMap.find(roomName)->second)->userList.size() == 0) { // ë°©ì¸ì› 0ëª…ì´ë©´ ë°© ì‚­ì œ
 							roomMap.erase(roomName);
 						}
 					}
 					LeaveCriticalSection(&roomCs);
 				}
-				string str = "´ç½ÅÀº °ü¸®ÀÚ¿¡ÀÇÇØ °­ÅğµÇ¾ú½À´Ï´Ù";
+				string str = "ë‹¹ì‹ ì€ ê´€ë¦¬ìì—ì˜í•´ ê°•í‡´ë˜ì—ˆìŠµë‹ˆë‹¤";
 				InsertSendQueue(SendTo::SEND_ME, str.c_str(), "", sock, ClientStatus::STATUS_LOGOUT);
 
 				{
 					lock_guard<mutex> guard(userCs);
-					userMap.erase(sock); // Á¢¼Ó ¼ÒÄÏ Á¤º¸ »èÁ¦
+					userMap.erase(sock); // ì ‘ì† ì†Œì¼“ ì •ë³´ ì‚­ì œ
 					cout << "Now login user count : " << userMap.size() << endl;
 				}
 
@@ -1202,6 +1202,13 @@ namespace BusinessService {
 		sprintf(msg, "{\"packet\":%d , \"cnt\":%zd}", cnt, userMap.size());
 		InsertSendQueue(SendTo::SEND_ME, msg, "", socket, ClientStatus::STATUS_INIT);
 	}
+
+	void BusinessService::StopSendWorker() {
+		sendStop.store(true, std::memory_order_relaxed);
+		sendCv.notify_all();
+	}
+
+
 
 	IocpService::IocpService* BusinessService::getIocpService() {
 		return this->iocpService;
